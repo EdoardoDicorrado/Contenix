@@ -9,7 +9,7 @@ import {
   X,
   Check,
 } from "lucide-react";
-import { DayPicker, type DateRange } from "react-day-picker";
+import { DayPicker, getDefaultClassNames, type DateRange } from "react-day-picker";
 import { it } from "date-fns/locale";
 import "react-day-picker/style.css";
 import { cn } from "@/lib/utils";
@@ -222,6 +222,111 @@ function PeriodPopover({
 }
 
 // ===================================================================
+// DayPickerStyled — wrapping con classi Tailwind coerenti col tema
+// ===================================================================
+
+type DayPickerStyledProps = {
+  mode: "range" | "single";
+  selected?: DateRange | Date | undefined;
+  onSelect?: ((d: DateRange | undefined) => void) | ((d: Date | undefined) => void);
+};
+
+function DayPickerStyled(props: DayPickerStyledProps) {
+  const def = getDefaultClassNames();
+  const currentYear = new Date().getFullYear();
+
+  // Classi shared per la cella giorno (l'override più importante)
+  const dayBase =
+    "h-9 w-9 rounded-md text-sm font-medium hover:bg-muted transition-colors";
+
+  const classNames = {
+    ...def,
+    // Container
+    root: cn(def.root, "text-foreground"),
+    months: "flex flex-col gap-3",
+    month: "flex flex-col gap-3",
+
+    // Header con label e frecce
+    month_caption: "flex items-center justify-center px-2 pt-1 pb-2",
+    caption_label: "text-sm font-semibold",
+    dropdowns: "flex items-center gap-1",
+    months_dropdown:
+      "h-8 rounded-md border border-input bg-background px-2 text-sm font-medium hover:bg-muted cursor-pointer",
+    years_dropdown:
+      "h-8 rounded-md border border-input bg-background px-2 text-sm font-medium hover:bg-muted cursor-pointer",
+
+    // Frecce navigazione
+    nav: "flex items-center justify-between absolute top-1 inset-x-2 z-10 pointer-events-none",
+    button_previous:
+      "h-8 w-8 rounded-md border border-border bg-background hover:bg-muted pointer-events-auto inline-flex items-center justify-center text-foreground transition-colors",
+    button_next:
+      "h-8 w-8 rounded-md border border-border bg-background hover:bg-muted pointer-events-auto inline-flex items-center justify-center text-foreground transition-colors",
+
+    // Griglia
+    month_grid: "w-full border-collapse",
+    weekdays: "flex",
+    weekday:
+      "text-muted-foreground w-9 font-medium text-[10px] uppercase tracking-wider text-center",
+    week: "flex w-full mt-1",
+
+    // Cella giorno
+    day: cn(def.day, "relative p-0 text-center"),
+    day_button: cn(
+      dayBase,
+      "border border-transparent",
+    ),
+
+    // Stati
+    today: "font-bold underline underline-offset-4",
+    outside: "text-muted-foreground/40",
+    disabled: "text-muted-foreground/40 cursor-not-allowed",
+    hidden: "invisible",
+
+    // Selezione singola
+    selected: "",
+
+    // Range
+    range_start:
+      "[&>button]:bg-foreground [&>button]:text-background [&>button]:rounded-r-none [&>button]:hover:bg-foreground",
+    range_end:
+      "[&>button]:bg-foreground [&>button]:text-background [&>button]:rounded-l-none [&>button]:hover:bg-foreground",
+    range_middle:
+      "[&>button]:bg-muted [&>button]:text-foreground [&>button]:rounded-none [&>button]:hover:bg-muted",
+  };
+
+  if (props.mode === "range") {
+    return (
+      <DayPicker
+        mode="range"
+        selected={props.selected as DateRange | undefined}
+        onSelect={props.onSelect as (d: DateRange | undefined) => void}
+        locale={it}
+        weekStartsOn={1}
+        numberOfMonths={1}
+        captionLayout="dropdown"
+        startMonth={new Date(2010, 0)}
+        endMonth={new Date(currentYear + 2, 11)}
+        classNames={classNames}
+      />
+    );
+  }
+  return (
+    <DayPicker
+      mode="single"
+      selected={props.selected as Date | undefined}
+      onSelect={props.onSelect as (d: Date | undefined) => void}
+      locale={it}
+      weekStartsOn={1}
+      numberOfMonths={1}
+      captionLayout="dropdown"
+      startMonth={new Date(2010, 0)}
+      endMonth={new Date(currentYear + 2, 11)}
+      classNames={classNames}
+    />
+  );
+}
+
+// ===================================================================
 // OVERLAY: RANGE CALENDAR
 // ===================================================================
 
@@ -275,17 +380,11 @@ function RangeOverlay({
           Click sul primo giorno, poi sull&apos;ultimo. Le frecce in alto navigano fra
           mesi.
         </div>
-        <div className="rounded-md border border-border bg-muted/20 p-3 flex justify-center rdp-wrapper">
-          <DayPicker
+        <div className="rounded-md border border-border bg-background p-3 flex justify-center">
+          <DayPickerStyled
             mode="range"
             selected={range}
             onSelect={setRange}
-            locale={it}
-            weekStartsOn={1}
-            numberOfMonths={2}
-            captionLayout="dropdown"
-            startMonth={new Date(2010, 0)}
-            endMonth={new Date(new Date().getFullYear() + 2, 11)}
           />
         </div>
         <div className="flex items-center justify-between gap-3">
