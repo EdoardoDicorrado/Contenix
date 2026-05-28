@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { formatRelative } from "@/lib/utils";
 import {
   countChangeLogEntries,
   listChangePairs,
@@ -92,15 +93,3 @@ export default async function StoricoCambiamentiPage() {
   );
 }
 
-function formatRelative(d: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "appena ora";
-  if (diffMin < 60) return `${diffMin} min fa`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h fa`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 7) return `${diffD}g fa`;
-  return d.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" });
-}

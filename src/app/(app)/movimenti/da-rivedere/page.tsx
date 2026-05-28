@@ -3,45 +3,8 @@ import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { listUncategorizedMovements } from "@/lib/db/queries/movements";
 import { listCategories } from "@/lib/db/queries/categories";
+import { fingerprint } from "@/lib/text-fingerprint";
 import { DaRivedereClient } from "./da-rivedere-client";
-
-// Stesso set di noise di storico-analyzer / movement-grouping
-const NOISE = new Set([
-  "bonifico", "pagamento", "incasso", "addebito", "accredito", "versamento",
-  "sepa", "fatt", "fattura", "del", "al", "da", "in", "per", "via", "c/o",
-  "spese", "commissioni", "sdd", "carta", "estratto", "conto", "saldo",
-  "rid", "nr", "ord", "ben", "beneficiario", "ordinante", "rif",
-  "cro", "iur", "trn", "cod", "codice", "data", "valuta", "dare",
-  "avere", "uscita", "entrata", "movimento", "credito", "debito", "cliente",
-  "fornitore", "italia", "italy", "spa", "srl", "sas", "snc",
-  "dt", "acq", "pos", "merchant", "voi", "vostro", "favore", "disposto",
-  "istantaneo", "europea", "europe", "limited",
-  "effettuato", "ore", "mediante", "presso", "ctv", "usd", "eur", "cambio",
-  "commissione", "conversione", "valutaria", "applicata", "operazione",
-  "autorizzazione", "ora", "alle", "intern", "inter", "notprovided", "cash",
-]);
-
-function fingerprint(text: string, maxTokens: number = 2): string {
-  if (!text) return "";
-  const cleaned = text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9\s./@-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const tokens = cleaned
-    .split(/[\s./]+/)
-    .filter((t) => {
-      if (t.length < 3) return false;
-      if (/^\d+$/.test(t)) return false;
-      if (/^\d/.test(t)) return false;
-      if (/^x+$/.test(t)) return false;
-      if (NOISE.has(t)) return false;
-      return true;
-    });
-  return tokens.slice(0, maxTokens).join(" ");
-}
 
 export type UnmatchedRow = {
   id: string;

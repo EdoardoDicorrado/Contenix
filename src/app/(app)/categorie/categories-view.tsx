@@ -12,9 +12,11 @@ import {
   ArrowUp,
   ArrowDown,
   Loader2,
+  Calendar,
+  ArrowUpDown,
 } from "lucide-react";
-import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { FilterButton, type FilterOption } from "@/components/ui/filter-button";
 import { formatCurrency } from "@/lib/utils";
 import { deleteCategoryAction } from "./actions";
 
@@ -38,22 +40,53 @@ type SortMode =
   | "total-asc"
   | "recent";
 
-const SORT_LABELS: Record<SortMode, string> = {
-  "alpha-asc": "A → Z",
-  "alpha-desc": "Z → A",
-  "count-desc": "Più movimenti",
-  "count-asc": "Meno movimenti",
-  "total-desc": "Importo: alto → basso",
-  "total-asc": "Importo: basso → alto",
-  recent: "Ultimo movimento",
-};
-
 type TypeFilter = "all" | "income" | "expense";
 
-export function CategoriesView({ categories }: { categories: CategoryWithStats[] }) {
+type Period = "month" | "quarter" | "ytd" | "year" | "all";
+
+const PERIOD_OPTIONS: FilterOption<Period>[] = [
+  { value: "all", label: "Sempre", description: "Tutto lo storico." },
+  { value: "month", label: "Mese corrente", description: "Solo il mese in corso." },
+  { value: "quarter", label: "Ultimi 3 mesi", description: "Il mese corrente più i due precedenti." },
+  { value: "ytd", label: "Anno corrente", description: "Da gennaio fino a oggi." },
+  { value: "year", label: "Ultimi 12 mesi", description: "Finestra mobile di 12 mesi." },
+];
+
+const TYPE_OPTIONS: FilterOption<TypeFilter>[] = [
+  { value: "all", label: "Tipo: tutti" },
+  { value: "expense", label: "Solo uscite" },
+  { value: "income", label: "Solo entrate" },
+];
+
+const SORT_OPTIONS: FilterOption<SortMode>[] = [
+  { value: "total-desc", label: "Costo: più alto", description: "Le categorie più onerose nel periodo selezionato." },
+  { value: "total-asc", label: "Costo: più basso" },
+  { value: "count-desc", label: "Più movimenti" },
+  { value: "count-asc", label: "Meno movimenti" },
+  { value: "recent", label: "Ultimo movimento", description: "Quelle usate più di recente." },
+  { value: "alpha-asc", label: "A → Z" },
+  { value: "alpha-desc", label: "Z → A" },
+];
+
+export function CategoriesView({
+  categories,
+  currentPeriod,
+  periodLabel,
+}: {
+  categories: CategoryWithStats[];
+  currentPeriod: Period;
+  periodLabel: string;
+}) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortMode>("count-desc");
+  // Default: ordina per costo più alto (quello che l'utente vuole vedere)
+  const [sort, setSort] = useState<SortMode>("total-desc");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+
+  function setPeriod(p: Period) {
+    const url = p === "all" ? "/categorie" : `/categorie?period=${p}`;
+    router.push(url);
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -115,27 +148,30 @@ export function CategoriesView({ categories }: { categories: CategoryWithStats[]
           )}
         </div>
 
-        <Select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
-          className="h-8 text-xs w-36"
-        >
-          <option value="all">Tipo: tutti</option>
-          <option value="expense">Solo uscite</option>
-          <option value="income">Solo entrate</option>
-        </Select>
+        <FilterButton
+          label="Periodo"
+          options={PERIOD_OPTIONS}
+          value={currentPeriod}
+          onChange={setPeriod}
+          overlayTitle="Seleziona periodo"
+          overlayIcon={<Calendar className="h-4 w-4 text-blue-600" />}
+        />
 
-        <Select
+        <FilterButton
+          label="Tipo"
+          options={TYPE_OPTIONS}
+          value={typeFilter}
+          onChange={setTypeFilter}
+        />
+
+        <FilterButton
+          label="Ordina"
+          options={SORT_OPTIONS}
           value={sort}
-          onChange={(e) => setSort(e.target.value as SortMode)}
-          className="h-8 text-xs w-52"
-        >
-          {Object.entries(SORT_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>
-              Ordina: {l}
-            </option>
-          ))}
-        </Select>
+          onChange={setSort}
+          overlayTitle="Ordina categorie per"
+          overlayIcon={<ArrowUpDown className="h-4 w-4 text-blue-600" />}
+        />
 
         <span className="text-xs text-muted-foreground ml-auto">
           <span className="text-foreground font-medium">{filtered.length}</span>/{categories.length} categorie
@@ -155,6 +191,7 @@ export function CategoriesView({ categories }: { categories: CategoryWithStats[]
               icon={<ArrowDown className="h-4 w-4 text-danger" />}
               count={expenses.length}
               items={expenses}
+              periodLabel={periodLabel}
             />
           )}
 
@@ -165,6 +202,7 @@ export function CategoriesView({ categories }: { categories: CategoryWithStats[]
               icon={<ArrowUp className="h-4 w-4 text-success" />}
               count={incomes.length}
               items={incomes}
+              periodLabel={periodLabel}
             />
           )}
         </>
@@ -178,10 +216,12 @@ function Section({
   icon,
   count,
   items,
+  periodLabel,
 }: {
   title: string;
   icon: React.ReactNode;
   count: number;
+  periodLabel: string;
   items: CategoryWithStats[];
 }) {
   const totalAmount = items.reduce((s, c) => s + parseFloat(c.total), 0);
@@ -196,7 +236,7 @@ function Section({
           </Badge>
         </div>
         <span className="text-xs text-muted-foreground">
-          Totale{" "}
+          Totale {periodLabel.toLowerCase()}{" "}
           <span className="font-medium text-foreground">{formatCurrency(totalAmount)}</span>
         </span>
       </header>

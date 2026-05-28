@@ -1,10 +1,35 @@
 import { EmptyState } from "@/components/ui/empty-state";
-import { listCategoriesWithStats } from "@/lib/db/queries/categories";
+import {
+  listCategoriesWithStats,
+  type CategoryStatsPeriod,
+} from "@/lib/db/queries/categories";
 import { CategoriesView } from "./categories-view";
 import { NewCategoryButton } from "./new-category-button";
 
-export default async function CategoriePage() {
-  const rows = await listCategoriesWithStats();
+type SP = Promise<{ period?: string }>;
+
+const VALID_PERIODS: CategoryStatsPeriod[] = [
+  "month",
+  "quarter",
+  "ytd",
+  "year",
+  "all",
+];
+
+const PERIOD_LABELS: Record<CategoryStatsPeriod, string> = {
+  month: "Mese corrente",
+  quarter: "Ultimi 3 mesi",
+  ytd: "Anno corrente",
+  year: "Ultimi 12 mesi",
+  all: "Sempre",
+};
+
+export default async function CategoriePage({ searchParams }: { searchParams: SP }) {
+  const sp = await searchParams;
+  const period: CategoryStatsPeriod = VALID_PERIODS.includes(sp.period as CategoryStatsPeriod)
+    ? (sp.period as CategoryStatsPeriod)
+    : "all";
+  const rows = await listCategoriesWithStats(period);
   const income = rows.filter((r) => r.type === "income");
   const expense = rows.filter((r) => r.type === "expense");
 
@@ -39,6 +64,8 @@ export default async function CategoriePage() {
             rulesCount: c.rulesCount,
             lastMovementAt: c.lastMovementAt,
           }))}
+          currentPeriod={period}
+          periodLabel={PERIOD_LABELS[period]}
         />
       )}
     </div>

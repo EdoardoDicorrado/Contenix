@@ -33,34 +33,7 @@ export type MovementGroup = {
   fromRule: boolean;
 };
 
-// Parole "rumore" bancario da rimuovere prima del fingerprint
-const NOISE_TOKENS = new Set([
-  "bonifico", "pagamento", "incasso", "addebito", "accredito", "versamento",
-  "sepa", "fatt", "fattura", "del", "al", "da", "in", "per", "via", "c/o",
-  "spese", "commissioni", "sdd", "carta", "estratto", "conto", "saldo",
-  "rid", "n", "nr", "ord", "ben", "beneficiario", "ordinante", "rif",
-  "cro", "iur", "trn", "id", "cod", "codice", "data", "valuta", "dare",
-  "avere", "uscita", "entrata", "movimento", "credito", "debito", "cliente",
-  "fornitore", "italia", "italy", "spa", "srl", "sas", "snc",
-]);
-
-function fingerprint(description: string): string {
-  const cleaned = description
-    .toLowerCase()
-    .replace(/[^a-zà-úü0-9\s./@-]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const tokens = cleaned
-    .split(/[\s.]+/)
-    .filter((t) => {
-      if (t.length < 3) return false;
-      if (/^\d+$/.test(t)) return false; // solo numeri
-      if (/^\d/.test(t)) return false; // inizia con numero (id, importi)
-      if (NOISE_TOKENS.has(t)) return false;
-      return true;
-    });
-  return tokens.slice(0, 2).join(" ");
-}
+import { fingerprint } from "./text-fingerprint";
 
 export function groupMovements(
   rows: ValidRowForGrouping[],

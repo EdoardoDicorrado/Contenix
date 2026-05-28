@@ -1,12 +1,17 @@
 import Link from "next/link";
-import { AlertCircle, ArrowRight, CheckCircle2, Wand2 } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Users, Wand2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getMovementsStats } from "@/lib/db/queries/movements";
+import { getEmployeeAllocationStats } from "@/lib/db/queries/apply-employee-allocation";
 import { SyncStatusCard } from "./sync-status-card";
+import { EmployeeSyncCard } from "./employee-sync-card";
 
 export default async function SincronizzaPage() {
-  const stats = await getMovementsStats();
+  const [stats, empStats] = await Promise.all([
+    getMovementsStats(),
+    getEmployeeAllocationStats(),
+  ]);
   const totalUnmatched = stats.unmatched;
 
   return (
@@ -38,13 +43,22 @@ export default async function SincronizzaPage() {
         </div>
       </div>
 
-      {/* Stato sincronizzazione */}
+      {/* Stato sincronizzazione categorie */}
       <section className="flex flex-col gap-2">
         <h3 className="text-sm font-medium flex items-center gap-2">
           <Wand2 className="h-4 w-4 text-blue-600" />
-          Stato sincronizzazione
+          Categorie (via regole)
         </h3>
         <SyncStatusCard stats={stats} />
+      </section>
+
+      {/* Allocazione dipendenti */}
+      <section className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <Users className="h-4 w-4 text-blue-600" />
+          Dipendenti (match nome+cognome nella descrizione)
+        </h3>
+        <EmployeeSyncCard stats={empStats} />
       </section>
 
       {/* Card link a "Da rivedere" */}

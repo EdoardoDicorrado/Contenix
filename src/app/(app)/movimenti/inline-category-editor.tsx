@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Trash2,
   CheckCircle2,
+  RotateCcw,
 } from "lucide-react";
 import { CategoryCombo, type CategoryOption } from "@/components/ui/category-combo";
 import {
@@ -82,6 +83,24 @@ export function InlineCategoryEditor({
     });
   }
 
+  function handleUndo() {
+    // Ripristina la categoria originale (currentCategoryId è quella server-rendered)
+    startTransition(async () => {
+      const res = await updateMovementCategoryAction({
+        movementId,
+        categoryId: currentCategoryId,
+      });
+      if (res.ok) {
+        setOptimisticName(null);
+        setNewCategoryId(null);
+        setNewCategoryName(null);
+        setConflicts([]);
+        setModalOpen(false);
+        router.refresh();
+      }
+    });
+  }
+
   if (editing) {
     return (
       <CategoryCombo
@@ -142,8 +161,10 @@ export function InlineCategoryEditor({
           conflicts={conflicts}
           newCategoryId={newCategoryId}
           newCategoryName={newCategoryName}
+          previousCategoryLabel={currentCategoryName ?? "Senza categoria"}
           onResolved={(ruleId) => setConflicts((prev) => prev.filter((c) => c.ruleId !== ruleId))}
           onClose={() => setModalOpen(false)}
+          onUndo={handleUndo}
         />
       )}
     </div>
@@ -154,21 +175,25 @@ function ConflictModal({
   conflicts,
   newCategoryId,
   newCategoryName,
+  previousCategoryLabel,
   onResolved,
   onClose,
+  onUndo,
 }: {
   conflicts: ConflictingRule[];
   newCategoryId: string | null;
   newCategoryName: string | null;
+  previousCategoryLabel: string;
   onResolved: (ruleId: string) => void;
   onClose: () => void;
+  onUndo: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [pendingRuleId, setPendingRuleId] = useState<string | null>(null);
   const [justResolved, setJustResolved] = useState<Set<string>>(new Set());
   // NOTA: questo modal NON si chiude con ESC né click sul backdrop.
-  // L'utente DEVE scegliere un'azione (Sposta/Elimina) o cliccare "Ignora".
+  // L'utente DEVE scegliere un'azione (Sposta/Elimina), "Annulla cambio" o "Ignora".
 
   function handleMove(ruleId: string) {
     if (!newCategoryId) return;
@@ -300,18 +325,30 @@ function ConflictModal({
           </div>
         </div>
 
-        <footer className="border-t border-border px-5 py-3 flex items-center justify-between gap-3">
+        <footer className="border-t border-border px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
           <p className="text-[11px] text-muted-foreground">
-            Devi scegliere un&apos;azione per ogni regola oppure ignorarle tutte.
+            Risolvi ogni regola, annulla il cambio o ignora.
           </p>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md text-sm font-medium bg-muted text-foreground border border-border hover:bg-border/60 transition-colors disabled:opacity-50"
-          >
-            Ignora
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={pending}
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-md text-sm font-medium bg-background text-foreground border border-border hover:bg-muted transition-colors disabled:opacity-50"
+              title={`Riporta la categoria a "${previousCategoryLabel}"`}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Annulla cambio
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={pending}
+              className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md text-sm font-medium bg-muted text-foreground border border-border hover:bg-border/60 transition-colors disabled:opacity-50"
+            >
+              Ignora
+            </button>
+          </div>
         </footer>
       </div>
     </div>

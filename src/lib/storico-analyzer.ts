@@ -5,6 +5,7 @@ import {
   VENDOR_RULES,
   type VendorRule,
 } from "./storico-knowledge";
+import { fingerprint, normalizeName } from "./text-fingerprint";
 
 /**
  * Onboarding via Excel storico già categorizzato.
@@ -198,19 +199,6 @@ function levenshtein(a: string, b: string, maxDistance: number): number {
   return prev[n];
 }
 
-/**
- * Normalizza un nome categoria per il confronto: lowercase, no accenti,
- * no spazi multipli, no caratteri non alfanumerici (eccetto spazi).
- */
-function normalizeCategoryName(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 /**
  * Decide se due nomi categoria sono "lo stesso concetto" e dovrebbero essere
@@ -221,8 +209,8 @@ function normalizeCategoryName(name: string): string {
  *      ("Software AI" e "Software" → sì, "Software" e "Stipendi" → no)
  */
 function shouldMergeCategories(a: string, b: string): boolean {
-  const na = normalizeCategoryName(a);
-  const nb = normalizeCategoryName(b);
+  const na = normalizeName(a);
+  const nb = normalizeName(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
 
@@ -385,39 +373,6 @@ export function buildCategoryProposals(
 // ===================================================================
 // ESTRAZIONE PATTERN
 // ===================================================================
-
-/** Token "rumore" bancario da scartare quando si calcola il fingerprint. */
-const NOISE_TOKENS = new Set([
-  "bonifico", "pagamento", "incasso", "addebito", "accredito", "versamento",
-  "sepa", "fatt", "fattura", "del", "al", "da", "in", "per", "via", "c/o",
-  "spese", "commissioni", "sdd", "carta", "estratto", "conto", "saldo",
-  "rid", "n", "nr", "ord", "ben", "beneficiario", "ordinante", "rif",
-  "cro", "iur", "trn", "id", "cod", "codice", "data", "valuta", "dare",
-  "avere", "uscita", "entrata", "movimento", "credito", "debito", "cliente",
-  "fornitore", "italia", "italy", "spa", "srl", "sas", "snc",
-  "dt", "acq", "pos", "merchant",
-]);
-
-function fingerprint(text: string, maxTokens: number = 2): string {
-  if (!text) return "";
-  const cleaned = text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9\s./@-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const tokens = cleaned
-    .split(/[\s.]+/)
-    .filter((t) => {
-      if (t.length < 3) return false;
-      if (/^\d+$/.test(t)) return false;
-      if (/^\d/.test(t)) return false;
-      if (NOISE_TOKENS.has(t)) return false;
-      return true;
-    });
-  return tokens.slice(0, maxTokens).join(" ");
-}
 
 /**
  * Estrae pattern affidabili dalle righe già categorizzate.

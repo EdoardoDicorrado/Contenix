@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Calendar, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { listChangesForPair } from "@/lib/db/queries/category-change-log";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatRelative } from "@/lib/utils";
 
 const SOURCE_LABELS: Record<string, string> = {
   sync: "Sincronizzazione",
@@ -96,7 +96,7 @@ export default async function DettaglioCambiamentiPage({
                   </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground inline-flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    {formatRelative(r.changedAt)}
+                    {formatRelative(r.changedAt, true)}
                   </td>
                   <td className="px-2 py-2 text-right">
                     <Link href={`/movimenti/${r.movementId}/modifica`}>
@@ -115,15 +115,3 @@ export default async function DettaglioCambiamentiPage({
   );
 }
 
-function formatRelative(d: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "ora";
-  if (diffMin < 60) return `${diffMin} min`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h fa`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 7) return `${diffD}g fa`;
-  return d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
-}
