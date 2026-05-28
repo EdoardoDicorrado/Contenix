@@ -3,12 +3,10 @@ import { Plus, Pencil, Trash2, FileText, ArrowUpRight, ArrowDownLeft, FileCode }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { listInvoices, getInvoicesStats, type InvoiceStatus } from "@/lib/db/queries/invoices";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { deleteInvoiceAction } from "./actions";
+import { FattureFilterBar } from "./filter-bar";
 
 type SP = Promise<{ type?: string; status?: string; search?: string }>;
 
@@ -75,41 +73,13 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
         </div>
       </div>
 
-      <form className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-lg border border-border bg-card">
-        <div>
-          <Label>Cerca controparte</Label>
-          <Input name="search" defaultValue={search} placeholder="Nome o ragione sociale…" />
-        </div>
-        <div>
-          <Label>Tipo</Label>
-          <Select name="type" defaultValue={type ?? ""}>
-            <option value="">Tutti</option>
-            <option value="purchase">Acquisti</option>
-            <option value="sale">Vendite</option>
-          </Select>
-        </div>
-        <div>
-          <Label>Stato</Label>
-          <Select name="status" defaultValue={status ?? ""}>
-            <option value="">Tutti</option>
-            {Object.entries(STATUS_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="flex items-end gap-2">
-          <Button type="submit" size="sm" variant="secondary">
-            Filtra
-          </Button>
-          <Link href="/fatture">
-            <Button type="button" size="sm" variant="ghost">
-              Reset
-            </Button>
-          </Link>
-        </div>
-      </form>
+      <FattureFilterBar
+        initial={{
+          type: type ?? "",
+          status: status ?? "",
+          search: search ?? "",
+        }}
+      />
 
       {list.length === 0 ? (
         <EmptyState

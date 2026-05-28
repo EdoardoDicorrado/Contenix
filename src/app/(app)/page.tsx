@@ -117,7 +117,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
             Panoramica finanziaria · {periodLabel}
           </p>
         </div>
-        <DashboardPeriodBar initialPeriod={period} />
+        <DashboardPeriodBar initialPeriod={rawPeriod} />
       </div>
 
       <DashboardKpi data={kpi} periodLabel={periodLabel} />

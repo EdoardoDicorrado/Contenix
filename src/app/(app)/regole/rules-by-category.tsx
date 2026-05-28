@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { FilterButton, type FilterOption } from "@/components/ui/filter-button";
 import { Select } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
 import {
@@ -192,17 +193,18 @@ export function RulesByCategory({
           )}
         </div>
 
-        <Select
+        <FilterButton
+          label="Ordina"
+          options={
+            Object.entries(SORT_LABELS).map(([v, l]) => ({
+              value: v as SortMode,
+              label: l,
+            })) as FilterOption<SortMode>[]
+          }
           value={sort}
-          onChange={(e) => setSort(e.target.value as SortMode)}
-          className="h-8 text-xs w-48"
-        >
-          {Object.entries(SORT_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>
-              Ordina: {l}
-            </option>
-          ))}
-        </Select>
+          onChange={setSort}
+          overlayTitle="Ordina regole per"
+        />
 
         <span className="text-xs text-muted-foreground ml-auto">
           {search ? (

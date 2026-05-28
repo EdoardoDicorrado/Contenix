@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search as SearchIcon, X, Check, ChevronDown } from "lucide-react";
+import { Search as SearchIcon, X, Check, ChevronDown, Tag } from "lucide-react";
 import { FilterButton, type FilterOption } from "@/components/ui/filter-button";
+import { OverlayModal } from "@/components/ui/overlay-modal";
 import { PeriodFilter } from "@/components/ui/period-filter";
 import {
   periodFromSearchParams,
@@ -182,8 +183,11 @@ function CategoryMultiFilter({
   const ref = useRef<HTMLDivElement>(null);
   const isActive = selectedIds.length > 0;
 
+  // Soglia: ≤4 categorie → popover compatto, >4 → overlay full
+  const useOverlay = categories.length > 4;
+
   useEffect(() => {
-    if (!open) return;
+    if (useOverlay || !open) return;
     function onClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
@@ -196,7 +200,7 @@ function CategoryMultiFilter({
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [open]);
+  }, [open, useOverlay]);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -226,6 +230,50 @@ function CategoryMultiFilter({
     e.stopPropagation();
     onChange([]);
   }
+
+  const content = (
+    <>
+      <input
+        autoFocus
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Cerca categoria…"
+        className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm mb-2"
+      />
+      <div
+        className={cn(
+          "overflow-auto",
+          useOverlay ? "max-h-96" : "max-h-72",
+        )}
+      >
+        {incomes.length > 0 && (
+          <Group label="Entrate" items={incomes} selected={selectedSet} onToggle={toggle} />
+        )}
+        {expenses.length > 0 && (
+          <Group label="Uscite" items={expenses} selected={selectedSet} onToggle={toggle} />
+        )}
+        {filtered.length === 0 && (
+          <div className="text-xs text-muted-foreground p-2 text-center">
+            Nessuna categoria
+          </div>
+        )}
+      </div>
+      {selectedIds.length > 0 && (
+        <div className="border-t border-border mt-2 pt-2 flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">
+            {selectedIds.length} selezionate
+          </span>
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="text-foreground hover:underline"
+          >
+            Deseleziona tutte
+          </button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div ref={ref} className="relative">
@@ -263,43 +311,21 @@ function CategoryMultiFilter({
         {!isActive && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
       </button>
 
-      {open && (
+      {open && !useOverlay && (
         <div className="absolute z-40 left-0 mt-1 w-64 rounded-md border border-border bg-background shadow-lg p-2">
-          <input
-            autoFocus
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cerca categoria…"
-            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs mb-1.5"
-          />
-          <div className="max-h-72 overflow-auto">
-            {incomes.length > 0 && (
-              <Group label="Entrate" items={incomes} selected={selectedSet} onToggle={toggle} />
-            )}
-            {expenses.length > 0 && (
-              <Group label="Uscite" items={expenses} selected={selectedSet} onToggle={toggle} />
-            )}
-            {filtered.length === 0 && (
-              <div className="text-xs text-muted-foreground p-2 text-center">
-                Nessuna categoria
-              </div>
-            )}
-          </div>
-          {selectedIds.length > 0 && (
-            <div className="border-t border-border mt-1.5 pt-1.5 flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">
-                {selectedIds.length} selezionate
-              </span>
-              <button
-                type="button"
-                onClick={() => onChange([])}
-                className="text-foreground hover:underline"
-              >
-                Deseleziona tutte
-              </button>
-            </div>
-          )}
+          {content}
         </div>
+      )}
+
+      {open && useOverlay && (
+        <OverlayModal
+          title="Filtra per categoria"
+          icon={<Tag className="h-4 w-4 text-foreground" />}
+          onClose={() => setOpen(false)}
+          size="md"
+        >
+          {content}
+        </OverlayModal>
       )}
     </div>
   );
