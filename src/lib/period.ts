@@ -4,15 +4,34 @@
  * components possono importarlo.
  */
 
-export type PeriodKind = "all" | "month" | "quarter" | "ytd" | "year" | "range";
+/**
+ * Tipologie di periodo supportate:
+ *  - `all`: nessun filtro
+ *  - `month`: un mese specifico (campo `month` = "YYYY-MM")
+ *  - `quarter`: ultimi 3 mesi rolling
+ *  - `ytd`: dall'1 gennaio dell'anno (default: corrente) fino a oggi
+ *  - `year`: ultimi 12 mesi rolling
+ *  - `full-year`: anno solare intero (campo `year`)
+ *  - `quarter-of-year`: trimestre specifico Q1-Q4 di un anno (campi `year`, `quarter`)
+ *  - `range`: range custom (campi `from`, `to` = "YYYY-MM-DD")
+ */
+export type PeriodKind =
+  | "all"
+  | "month"
+  | "quarter"
+  | "ytd"
+  | "year"
+  | "full-year"
+  | "quarter-of-year"
+  | "range";
 
 export type PeriodValue = {
   kind: PeriodKind;
-  /** Per `month`: stringa "YYYY-MM" */
   month?: string;
-  /** Per `range`: "YYYY-MM-DD" */
   from?: string;
   to?: string;
+  year?: number;
+  quarter?: 1 | 2 | 3 | 4;
 };
 
 const MONTH_LABELS = [
@@ -30,6 +49,7 @@ function formatMonth(yyyymm: string): string {
  * Label umano del periodo (per il bottone, header, ecc.).
  */
 export function describePeriod(p: PeriodValue): string {
+  const curYear = new Date().getUTCFullYear();
   switch (p.kind) {
     case "all":
       return "Sempre";
@@ -37,10 +57,19 @@ export function describePeriod(p: PeriodValue): string {
       return p.month ? formatMonth(p.month) : "Mese…";
     case "quarter":
       return "Ultimi 3 mesi";
-    case "ytd":
-      return "Anno corrente";
+    case "ytd": {
+      const y = p.year ?? curYear;
+      return y === curYear ? "Anno corrente" : `Da inizio ${y}`;
+    }
     case "year":
       return "Ultimi 12 mesi";
+    case "full-year":
+      return `Anno ${p.year ?? curYear}`;
+    case "quarter-of-year": {
+      const q = p.quarter ?? 1;
+      const y = p.year ?? curYear;
+      return `Q${q} ${y}`;
+    }
     case "range":
       if (p.from && p.to) {
         const f = new Date(p.from).toLocaleDateString("it-IT", {
@@ -64,8 +93,8 @@ export function describePeriod(p: PeriodValue): string {
  */
 export function periodToWindow(p: PeriodValue): { from?: Date; to?: Date } {
   const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
+  const curY = now.getUTCFullYear();
+  const curM = now.getUTCMonth();
   switch (p.kind) {
     case "all":
       return {};
@@ -79,24 +108,44 @@ export function periodToWindow(p: PeriodValue): { from?: Date; to?: Date } {
     }
     case "quarter":
       return {
-        from: new Date(Date.UTC(y, m - 2, 1)),
-        to: new Date(Date.UTC(y, m + 1, 1)),
+        from: new Date(Date.UTC(curY, curM - 2, 1)),
+        to: new Date(Date.UTC(curY, curM + 1, 1)),
       };
-    case "ytd":
+    case "ytd": {
+      const y = p.year ?? curY;
+      // Se è l'anno corrente, taglia a fine mese corrente; altrimenti tutto l'anno
+      const endMonth = y === curY ? curM + 1 : 12;
       return {
         from: new Date(Date.UTC(y, 0, 1)),
-        to: new Date(Date.UTC(y, m + 1, 1)),
+        to: new Date(Date.UTC(y, endMonth, 1)),
       };
+    }
     case "year":
       return {
-        from: new Date(Date.UTC(y, m - 11, 1)),
-        to: new Date(Date.UTC(y, m + 1, 1)),
+        from: new Date(Date.UTC(curY, curM - 11, 1)),
+        to: new Date(Date.UTC(curY, curM + 1, 1)),
       };
+    case "full-year": {
+      const y = p.year ?? curY;
+      return {
+        from: new Date(Date.UTC(y, 0, 1)),
+        to: new Date(Date.UTC(y + 1, 0, 1)),
+      };
+    }
+    case "quarter-of-year": {
+      const y = p.year ?? curY;
+      const q = p.quarter ?? 1;
+      const startMonth = (q - 1) * 3;
+      return {
+        from: new Date(Date.UTC(y, startMonth, 1)),
+        to: new Date(Date.UTC(y, startMonth + 3, 1)),
+      };
+    }
     case "range":
       return {
         from: p.from ? new Date(p.from) : undefined,
         to: p.to
-          ? new Date(new Date(p.to).getTime() + 24 * 3600 * 1000) // estremo to inclusivo
+          ? new Date(new Date(p.to).getTime() + 24 * 3600 * 1000)
           : undefined,
       };
   }
@@ -114,6 +163,12 @@ export function periodToQueryString(p: PeriodValue): string {
     if (p.from) params.set("from", p.from);
     if (p.to) params.set("to", p.to);
   }
+  if (p.year != null && (p.kind === "ytd" || p.kind === "full-year" || p.kind === "quarter-of-year")) {
+    params.set("year", String(p.year));
+  }
+  if (p.quarter != null && p.kind === "quarter-of-year") {
+    params.set("quarter", String(p.quarter));
+  }
   return params.toString();
 }
 
@@ -125,12 +180,24 @@ export function periodFromSearchParams(sp: {
   month?: string;
   from?: string;
   to?: string;
+  year?: string;
+  quarter?: string;
 }): PeriodValue {
   const k = sp.period as PeriodKind | undefined;
   if (!k || k === "all") return { kind: "all" };
   if (k === "month") return { kind: "month", month: sp.month };
   if (k === "range") return { kind: "range", from: sp.from, to: sp.to };
-  if (k === "quarter" || k === "ytd" || k === "year") return { kind: k };
+  if (k === "quarter" || k === "year") return { kind: k };
+  if (k === "ytd") return { kind: "ytd", year: sp.year ? Number(sp.year) : undefined };
+  if (k === "full-year") return { kind: "full-year", year: sp.year ? Number(sp.year) : undefined };
+  if (k === "quarter-of-year") {
+    const q = sp.quarter ? Number(sp.quarter) : 1;
+    return {
+      kind: "quarter-of-year",
+      year: sp.year ? Number(sp.year) : undefined,
+      quarter: (q >= 1 && q <= 4 ? q : 1) as 1 | 2 | 3 | 4,
+    };
+  }
   return { kind: "all" };
 }
 

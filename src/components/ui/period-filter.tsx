@@ -222,70 +222,184 @@ function PeriodPopover({
 }
 
 // ===================================================================
-// DayPickerStyled — wrapping con classi Tailwind coerenti col tema
+// CalendarPicker — wrapping con caption custom (mese/anno grid stile Airbnb)
 // ===================================================================
 
-type DayPickerStyledProps = {
-  mode: "range" | "single";
-  selected?: DateRange | Date | undefined;
-  onSelect?: ((d: DateRange | undefined) => void) | ((d: Date | undefined) => void);
+const MONTH_NAMES_FULL = [
+  "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+  "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
+];
+const MONTH_NAMES_SHORT = [
+  "Gen", "Feb", "Mar", "Apr", "Mag", "Giu",
+  "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
+];
+
+type CalendarPickerProps = {
+  range?: DateRange | undefined;
+  onRangeChange?: (d: DateRange | undefined) => void;
 };
 
-function DayPickerStyled(props: DayPickerStyledProps) {
-  const def = getDefaultClassNames();
-  const currentYear = new Date().getFullYear();
+function CalendarPicker({ range, onRangeChange }: CalendarPickerProps) {
+  const [viewMonth, setViewMonth] = useState<Date>(
+    range?.from ?? new Date(),
+  );
+  const [view, setView] = useState<"days" | "months" | "years">("days");
 
-  // Classi shared per la cella giorno (l'override più importante)
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+
+  function shift(delta: number) {
+    if (view === "days") {
+      const d = new Date(viewMonth);
+      d.setMonth(d.getMonth() + delta);
+      setViewMonth(d);
+    } else if (view === "months") {
+      const d = new Date(viewMonth);
+      d.setFullYear(d.getFullYear() + delta);
+      setViewMonth(d);
+    } else {
+      const d = new Date(viewMonth);
+      d.setFullYear(d.getFullYear() + delta * 10);
+      setViewMonth(d);
+    }
+  }
+
+  function pickMonth(idx: number) {
+    const d = new Date(viewMonth);
+    d.setMonth(idx);
+    setViewMonth(d);
+    setView("days");
+  }
+  function pickYear(y: number) {
+    const d = new Date(viewMonth);
+    d.setFullYear(y);
+    setViewMonth(d);
+    setView("months");
+  }
+
+  const captionLabel = view === "days" ? MONTH_NAMES_FULL[viewMonth.getMonth()] : null;
+  const yearLabel = viewMonth.getFullYear();
+
+  // Decade per il view "years": 10 anni centrati attorno all'attuale viewYear
+  const decadeStart = Math.floor(yearLabel / 10) * 10;
+  const decadeEnd = decadeStart + 9;
+
+  return (
+    <div className="flex flex-col gap-2 select-none w-fit">
+      {/* Header custom: anno (sopra) + mese (sotto), cliccabili */}
+      <div className="flex items-center justify-between gap-2 px-1">
+        <button
+          type="button"
+          onClick={() => shift(-1)}
+          className="h-8 w-8 rounded-md border border-border bg-background hover:bg-muted inline-flex items-center justify-center text-foreground"
+          aria-label="Precedente"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <div className="flex flex-col items-center gap-0.5 flex-1">
+          <button
+            type="button"
+            onClick={() =>
+              setView((v) => (v === "years" ? "days" : "years"))
+            }
+            className={cn(
+              "text-xs uppercase tracking-wider px-2 py-0.5 rounded hover:bg-muted",
+              view === "years" && "bg-foreground text-background",
+            )}
+          >
+            {view === "years" ? `${decadeStart}–${decadeEnd}` : yearLabel}
+          </button>
+          {captionLabel && (
+            <button
+              type="button"
+              onClick={() => setView("months")}
+              className={cn(
+                "text-base font-semibold px-2 py-0.5 rounded hover:bg-muted",
+                view === "months" && "bg-foreground text-background",
+              )}
+            >
+              {captionLabel}
+            </button>
+          )}
+          {view === "months" && (
+            <span className="text-base font-semibold">Mese</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => shift(+1)}
+          className="h-8 w-8 rounded-md border border-border bg-background hover:bg-muted inline-flex items-center justify-center text-foreground"
+          aria-label="Successivo"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Body */}
+      {view === "days" && (
+        <DaysView
+          viewMonth={viewMonth}
+          range={range}
+          onRangeChange={onRangeChange}
+          onMonthChange={setViewMonth}
+        />
+      )}
+      {view === "months" && (
+        <MonthsGrid
+          year={viewMonth.getFullYear()}
+          selectedMonth={viewMonth.getMonth()}
+          currentYearMonth={
+            yearLabel === currentYear ? currentMonth : null
+          }
+          onPick={pickMonth}
+        />
+      )}
+      {view === "years" && (
+        <YearsGrid
+          decadeStart={decadeStart}
+          selectedYear={yearLabel}
+          currentYear={currentYear}
+          onPick={pickYear}
+        />
+      )}
+    </div>
+  );
+}
+
+function DaysView({
+  viewMonth,
+  range,
+  onRangeChange,
+  onMonthChange,
+}: {
+  viewMonth: Date;
+  range?: DateRange;
+  onRangeChange?: (d: DateRange | undefined) => void;
+  onMonthChange: (d: Date) => void;
+}) {
+  const def = getDefaultClassNames();
   const dayBase =
     "h-9 w-9 rounded-md text-sm font-medium hover:bg-muted transition-colors";
 
   const classNames = {
     ...def,
-    // Container
     root: cn(def.root, "text-foreground"),
-    months: "flex flex-col gap-3",
-    month: "flex flex-col gap-3",
-
-    // Header con label e frecce
-    month_caption: "flex items-center justify-center px-2 pt-1 pb-2",
-    caption_label: "text-sm font-semibold",
-    dropdowns: "flex items-center gap-1",
-    months_dropdown:
-      "h-8 rounded-md border border-input bg-background px-2 text-sm font-medium hover:bg-muted cursor-pointer",
-    years_dropdown:
-      "h-8 rounded-md border border-input bg-background px-2 text-sm font-medium hover:bg-muted cursor-pointer",
-
-    // Frecce navigazione
-    nav: "flex items-center justify-between absolute top-1 inset-x-2 z-10 pointer-events-none",
-    button_previous:
-      "h-8 w-8 rounded-md border border-border bg-background hover:bg-muted pointer-events-auto inline-flex items-center justify-center text-foreground transition-colors",
-    button_next:
-      "h-8 w-8 rounded-md border border-border bg-background hover:bg-muted pointer-events-auto inline-flex items-center justify-center text-foreground transition-colors",
-
-    // Griglia
+    months: "flex flex-col gap-1",
+    month: "flex flex-col gap-1",
+    month_caption: "hidden",
+    nav: "hidden",
     month_grid: "w-full border-collapse",
     weekdays: "flex",
     weekday:
       "text-muted-foreground w-9 font-medium text-[10px] uppercase tracking-wider text-center",
-    week: "flex w-full mt-1",
-
-    // Cella giorno
+    week: "flex w-full mt-0.5",
     day: cn(def.day, "relative p-0 text-center"),
-    day_button: cn(
-      dayBase,
-      "border border-transparent",
-    ),
-
-    // Stati
+    day_button: cn(dayBase, "border border-transparent"),
     today: "font-bold underline underline-offset-4",
     outside: "text-muted-foreground/40",
     disabled: "text-muted-foreground/40 cursor-not-allowed",
     hidden: "invisible",
-
-    // Selezione singola
     selected: "",
-
-    // Range
     range_start:
       "[&>button]:bg-foreground [&>button]:text-background [&>button]:rounded-r-none [&>button]:hover:bg-foreground",
     range_end:
@@ -294,35 +408,102 @@ function DayPickerStyled(props: DayPickerStyledProps) {
       "[&>button]:bg-muted [&>button]:text-foreground [&>button]:rounded-none [&>button]:hover:bg-muted",
   };
 
-  if (props.mode === "range") {
-    return (
-      <DayPicker
-        mode="range"
-        selected={props.selected as DateRange | undefined}
-        onSelect={props.onSelect as (d: DateRange | undefined) => void}
-        locale={it}
-        weekStartsOn={1}
-        numberOfMonths={1}
-        captionLayout="dropdown"
-        startMonth={new Date(2010, 0)}
-        endMonth={new Date(currentYear + 2, 11)}
-        classNames={classNames}
-      />
-    );
-  }
   return (
     <DayPicker
-      mode="single"
-      selected={props.selected as Date | undefined}
-      onSelect={props.onSelect as (d: Date | undefined) => void}
+      mode="range"
+      selected={range}
+      onSelect={onRangeChange}
       locale={it}
       weekStartsOn={1}
       numberOfMonths={1}
-      captionLayout="dropdown"
-      startMonth={new Date(2010, 0)}
-      endMonth={new Date(currentYear + 2, 11)}
+      month={viewMonth}
+      onMonthChange={onMonthChange}
       classNames={classNames}
     />
+  );
+}
+
+function MonthsGrid({
+  year,
+  selectedMonth,
+  currentYearMonth,
+  onPick,
+}: {
+  year: number;
+  selectedMonth: number;
+  currentYearMonth: number | null;
+  onPick: (idx: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-1.5 p-1">
+      {MONTH_NAMES_SHORT.map((m, i) => {
+        const isSelected = i === selectedMonth;
+        const isCurrent = currentYearMonth === i;
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onPick(i)}
+            className={cn(
+              "h-12 w-20 rounded-md border text-sm font-medium transition-colors",
+              isSelected
+                ? "bg-foreground text-background border-foreground"
+                : isCurrent
+                  ? "border-foreground/60 hover:bg-muted"
+                  : "border-border hover:bg-muted",
+            )}
+            title={`${MONTH_NAMES_FULL[i]} ${year}`}
+          >
+            {m}
+            {isCurrent && (
+              <div className="text-[9px] opacity-70 leading-none">oggi</div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function YearsGrid({
+  decadeStart,
+  selectedYear,
+  currentYear,
+  onPick,
+}: {
+  decadeStart: number;
+  selectedYear: number;
+  currentYear: number;
+  onPick: (year: number) => void;
+}) {
+  const years = Array.from({ length: 10 }, (_, i) => decadeStart + i);
+  return (
+    <div className="grid grid-cols-5 gap-1.5 p-1">
+      {years.map((y) => {
+        const isSelected = y === selectedYear;
+        const isCurrent = y === currentYear;
+        return (
+          <button
+            key={y}
+            type="button"
+            onClick={() => onPick(y)}
+            className={cn(
+              "h-12 w-12 rounded-md border text-sm font-medium tabular-nums transition-colors",
+              isSelected
+                ? "bg-foreground text-background border-foreground"
+                : isCurrent
+                  ? "border-foreground/60 hover:bg-muted"
+                  : "border-border hover:bg-muted",
+            )}
+          >
+            {y}
+            {isCurrent && (
+              <div className="text-[9px] opacity-70 leading-none">oggi</div>
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -381,11 +562,7 @@ function RangeOverlay({
           mesi.
         </div>
         <div className="rounded-md border border-border bg-background p-3 flex justify-center">
-          <DayPickerStyled
-            mode="range"
-            selected={range}
-            onSelect={setRange}
-          />
+          <CalendarPicker range={range} onRangeChange={setRange} />
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">{fmtRange}</div>
