@@ -18,16 +18,33 @@ export type MonthlyDataPoint = {
 };
 
 /**
- * Serie temporale degli ultimi N mesi (esclusi i trasferimenti).
- * Restituisce sempre N punti (anche mesi con 0 movimenti) per il grafico.
+ * Serie temporale mensile per il grafico.
+ * - `mode: "calendar-year"` (default): tutti i 12 mesi dell'anno (gen-dic).
+ * - `mode: "rolling"`: gli ultimi N mesi rolling fino a oggi.
  */
-export async function getMonthlyTimeseries(months = 12): Promise<MonthlyDataPoint[]> {
-  // Calcola la finestra: ultimi N mesi inclusi
+export async function getMonthlyTimeseries(
+  options: { mode?: "calendar-year" | "rolling"; year?: number; months?: number } = {},
+): Promise<MonthlyDataPoint[]> {
+  const mode = options.mode ?? "calendar-year";
   const now = new Date();
-  const startYear = now.getUTCFullYear();
-  const startMonth = now.getUTCMonth() - (months - 1); // può essere negativo
+  let startYear: number;
+  let startMonth: number;
+  let numPoints: number;
+
+  if (mode === "calendar-year") {
+    const y = options.year ?? now.getUTCFullYear();
+    startYear = y;
+    startMonth = 0;
+    numPoints = 12;
+  } else {
+    const months = options.months ?? 12;
+    startYear = now.getUTCFullYear();
+    startMonth = now.getUTCMonth() - (months - 1);
+    numPoints = months;
+  }
+
   const start = new Date(Date.UTC(startYear, startMonth, 1));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const end = new Date(Date.UTC(startYear, startMonth + numPoints, 1));
 
   const rows = await db
     .select({
@@ -41,9 +58,8 @@ export async function getMonthlyTimeseries(months = 12): Promise<MonthlyDataPoin
 
   const byMonth = new Map(rows.map((r) => [r.month, r]));
 
-  // Genera tutti gli N punti (anche zero)
   const out: MonthlyDataPoint[] = [];
-  for (let i = 0; i < months; i++) {
+  for (let i = 0; i < numPoints; i++) {
     const d = new Date(Date.UTC(startYear, startMonth + i, 1));
     const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
     const row = byMonth.get(key);
@@ -55,6 +71,46 @@ export async function getMonthlyTimeseries(months = 12): Promise<MonthlyDataPoin
       expense,
       net: income - expense,
     });
+  }
+  return out;
+}
+
+/**
+ * Serie temporale annuale: un punto per anno solare (ultimi N anni).
+ * Esclude trasferimenti.
+ */
+export type YearlyDataPoint = {
+  year: number;
+  income: number;
+  expense: number;
+  net: number;
+};
+
+export async function getYearlyTimeseries(years = 5): Promise<YearlyDataPoint[]> {
+  const now = new Date();
+  const endYear = now.getUTCFullYear();
+  const startYear = endYear - (years - 1);
+  const start = new Date(Date.UTC(startYear, 0, 1));
+  const end = new Date(Date.UTC(endYear + 1, 0, 1));
+
+  const rows = await db
+    .select({
+      y: sql<string>`to_char(date_trunc('year', ${movements.date}), 'YYYY')`,
+      income: sql<string>`COALESCE(SUM(CASE WHEN ${movements.type} = 'income' AND ${movements.isTransfer} = false THEN ${movements.amount}::numeric ELSE 0 END), 0)::text`,
+      expense: sql<string>`COALESCE(SUM(CASE WHEN ${movements.type} = 'expense' AND ${movements.isTransfer} = false THEN ${movements.amount}::numeric ELSE 0 END), 0)::text`,
+    })
+    .from(movements)
+    .where(and(gte(movements.date, start), lt(movements.date, end)))
+    .groupBy(sql`date_trunc('year', ${movements.date})`);
+
+  const byYear = new Map(rows.map((r) => [r.y, r]));
+  const out: YearlyDataPoint[] = [];
+  for (let i = 0; i < years; i++) {
+    const y = startYear + i;
+    const row = byYear.get(String(y));
+    const income = row ? parseFloat(row.income) : 0;
+    const expense = row ? parseFloat(row.expense) : 0;
+    out.push({ year: y, income, expense, net: income - expense });
   }
   return out;
 }

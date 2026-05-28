@@ -6,6 +6,7 @@ import {
   getMonthlyTimeseries,
   getTopCategoriesInWindow,
   getTopVendorsInWindow,
+  getYearlyTimeseries,
 } from "@/lib/db/queries/dashboard";
 import { forecastTimeseries } from "@/lib/forecast";
 import {
@@ -24,6 +25,9 @@ type SP = Promise<{
   month?: string;
   from?: string;
   to?: string;
+  year?: string;
+  quarter?: string;
+  scale?: string;
 }>;
 
 export default async function DashboardPage({ searchParams }: { searchParams: SP }) {
@@ -36,9 +40,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const window = periodToWindow(period);
   const periodLabel = describePeriod(period);
 
+  const scale: "month" | "year" = sp.scale === "year" ? "year" : "month";
+
   const [
     kpi,
-    timeseries,
+    monthlySeries,
+    yearlySeries,
     topExpenses,
     topIncomes,
     accounts,
@@ -47,7 +54,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
     topVendors,
   ] = await Promise.all([
     getKpiOverview(window),
-    getMonthlyTimeseries(12),
+    // Default vista mensile: anno corrente (gen-dic). Sempre caricato per
+    // mantenere il forecast disponibile.
+    getMonthlyTimeseries({ mode: "calendar-year", year: currentYear }),
+    scale === "year"
+      ? getYearlyTimeseries(5)
+      : Promise.resolve([] as Awaited<ReturnType<typeof getYearlyTimeseries>>),
     getTopCategoriesInWindow(window, "expense", 5),
     getTopCategoriesInWindow(window, "income", 5),
     getAccountsBalances(),
@@ -56,16 +68,32 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
     getTopVendorsInWindow(window, 5),
   ]);
 
-  // Forecast 3 mesi avanti
-  const incomeF = forecastTimeseries(timeseries.map((p) => p.income), 3);
-  const expenseF = forecastTimeseries(timeseries.map((p) => p.expense), 3);
-  const netF = forecastTimeseries(timeseries.map((p) => p.net), 3);
+  // Forecast 3 punti (mesi o anni) basato sulla serie corrente
+  const baseSeries =
+    scale === "year"
+      ? yearlySeries.map((y) => ({
+          month: String(y.year),
+          income: y.income,
+          expense: y.expense,
+          net: y.net,
+        }))
+      : monthlySeries;
 
+  const incomeF = forecastTimeseries(baseSeries.map((p) => p.income), 3);
+  const expenseF = forecastTimeseries(baseSeries.map((p) => p.expense), 3);
+  const netF = forecastTimeseries(baseSeries.map((p) => p.net), 3);
+
+  const lastKey = baseSeries[baseSeries.length - 1]?.month ?? "";
   const forecastPoints: TrendPoint[] = incomeF.map((_, i) => {
-    const lastMonth = timeseries[timeseries.length - 1].month;
-    const [y, m] = lastMonth.split("-").map(Number);
-    const futureDate = new Date(Date.UTC(y, m - 1 + (i + 1), 1));
-    const futureKey = `${futureDate.getUTCFullYear()}-${String(futureDate.getUTCMonth() + 1).padStart(2, "0")}`;
+    let futureKey: string;
+    if (scale === "year") {
+      const lastY = Number(lastKey || currentYear);
+      futureKey = String(lastY + (i + 1));
+    } else {
+      const [y, m] = lastKey.split("-").map(Number);
+      const futureDate = new Date(Date.UTC(y, m - 1 + (i + 1), 1));
+      futureKey = `${futureDate.getUTCFullYear()}-${String(futureDate.getUTCMonth() + 1).padStart(2, "0")}`;
+    }
     return {
       month: futureKey,
       income: 0,
@@ -95,13 +123,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
       <DashboardKpi data={kpi} periodLabel={periodLabel} />
 
       <DashboardTrend
-        history={timeseries.map((p) => ({
-          month: p.month,
-          income: p.income,
-          expense: p.expense,
-          net: p.net,
-        }))}
+        history={baseSeries}
         forecast={forecastPoints}
+        scale={scale}
       />
 
       <DashboardBreakdown

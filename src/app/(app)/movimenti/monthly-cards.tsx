@@ -91,7 +91,7 @@ function MonthCard({ data, extraQs }: { data: MonthlyAggregate; extraQs: string 
   const income = parseFloat(data.income);
   const expense = parseFloat(data.expense);
   const saldo = income - expense;
-  const href = `/movimenti?month=${data.month}${extraQs ? `&${extraQs}` : ""}`;
+  const href = `/movimenti?period=month&month=${data.month}${extraQs ? `&${extraQs}` : ""}`;
 
   return (
     <Link

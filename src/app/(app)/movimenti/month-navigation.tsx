@@ -29,7 +29,7 @@ export function MonthNavigation({
   const label = m && y ? `${MONTH_LABELS[m - 1]} ${y}` : currentMonth;
 
   function urlFor(month: string) {
-    return `/movimenti?month=${month}${extraQs ? `&${extraQs}` : ""}`;
+    return `/movimenti?period=month&month=${month}${extraQs ? `&${extraQs}` : ""}`;
   }
 
   return (
