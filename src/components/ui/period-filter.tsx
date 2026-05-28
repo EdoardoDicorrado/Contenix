@@ -35,13 +35,30 @@ type Props = {
   value: PeriodValue;
   onChange: (v: PeriodValue) => void;
   className?: string;
+  /**
+   * "full" (default): popover con tutti i preset.
+   * "range-only": il bottone apre direttamente il calendario range e si mostra
+   *   "attivo" solo se kind === "range". Usato sulla dashboard dove esiste già
+   *   una barra dedicata per gli altri preset.
+   */
+  mode?: "full" | "range-only";
+  /** Etichetta del bottone (default: "Periodo"). */
+  label?: string;
 };
 
-export function PeriodFilter({ value, onChange, className }: Props) {
+export function PeriodFilter({
+  value,
+  onChange,
+  className,
+  mode = "full",
+  label = "Periodo",
+}: Props) {
   const [open, setOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<"range" | "month" | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const isDefault = value.kind === "all";
+  const rangeOnly = mode === "range-only";
+  // In "range-only" l'attivazione segue solo il kind range; in "full" segue il default
+  const isDefault = rangeOnly ? value.kind !== "range" : value.kind === "all";
 
   useEffect(() => {
     if (!open) return;
@@ -64,11 +81,26 @@ export function PeriodFilter({ value, onChange, className }: Props) {
     onChange({ kind: "all" });
   }
 
+  function handleButtonClick() {
+    if (rangeOnly) {
+      // Apre direttamente il calendario range
+      setCalendarMode("range");
+    } else {
+      setOpen(!open);
+    }
+  }
+
+  // In range-only: se non c'è range selezionato, mostra solo "Personalizzato"
+  const buttonText =
+    rangeOnly && value.kind !== "range"
+      ? "Personalizzato"
+      : describePeriod(value);
+
   return (
     <div ref={ref} className={cn("relative", className)}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={handleButtonClick}
         className={cn(
           "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
           !isDefault
@@ -77,10 +109,12 @@ export function PeriodFilter({ value, onChange, className }: Props) {
         )}
       >
         <Calendar className="h-3 w-3" />
-        <span className={cn("opacity-70", !isDefault && "text-background/80")}>
-          Periodo:
-        </span>
-        <span className="font-medium max-w-44 truncate">{describePeriod(value)}</span>
+        {!rangeOnly && (
+          <span className={cn("opacity-70", !isDefault && "text-background/80")}>
+            {label}:
+          </span>
+        )}
+        <span className="font-medium max-w-44 truncate">{buttonText}</span>
         {!isDefault && (
           <span
             role="button"

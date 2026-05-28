@@ -132,8 +132,8 @@ export function DashboardPeriodBar({ initialPeriod }: { initialPeriod: PeriodVal
         onPick={applySpecificQuarter}
       />
 
-      {/* PeriodFilter completo (Mese specifico / Personalizzato) */}
-      <PeriodFilter value={initialPeriod} onChange={apply} />
+      {/* PeriodFilter: solo "Personalizzato" → apre direttamente il calendario */}
+      <PeriodFilter value={initialPeriod} onChange={apply} mode="range-only" />
     </div>
   );
 }
