@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<ns3:FatturaElettronica xmlns:ns2="http://www.w3.org/2000/09/xmldsig#" xmlns:ns3="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12">
+    <FatturaElettronicaHeader>
+        <DatiTrasmissione>
+            <IdTrasmittente>
+                <IdPaese>IT</IdPaese>
+                <IdCodice>04228480408</IdCodice>
+            </IdTrasmittente>
+            <ProgressivoInvio>1</ProgressivoInvio>
+            <FormatoTrasmissione>FPR12</FormatoTrasmissione>
+            <CodiceDestinatario>QULXG4S</CodiceDestinatario><ContattiTrasmittente />
+        </DatiTrasmissione>
+        <CedentePrestatore>
+            <DatiAnagrafici>
+                <IdFiscaleIVA>
+                    <IdPaese>IT</IdPaese>
+                    <IdCodice>01827680339</IdCodice>
+                </IdFiscaleIVA>
+                <CodiceFiscale>01827680339</CodiceFiscale>
+                <Anagrafica>
+                    <Denominazione>WHITE PAPER S.R.L.</Denominazione>
+                </Anagrafica>
+                <RegimeFiscale>RF01</RegimeFiscale>
+            </DatiAnagrafici>
+            <Sede>
+                <Indirizzo>VIA IV NOVEMBRE</Indirizzo>
+                <NumeroCivico>18</NumeroCivico>
+                <CAP>29122</CAP>
+                <Comune>PIACENZA</Comune>
+                <Provincia>PC</Provincia>
+                <Nazione>IT</Nazione>
+            </Sede>
+            <Contatti>
+                <Email>info@wpaper.it</Email>
+            </Contatti>
+        </CedentePrestatore>
+        <CessionarioCommittente>
+            <DatiAnagrafici>
+                <IdFiscaleIVA>
+                    <IdPaese>IT</IdPaese>
+                    <IdCodice>04490120989</IdCodice>
+                </IdFiscaleIVA>
+                <CodiceFiscale>04490120989</CodiceFiscale>
+                <Anagrafica>
+                    <Denominazione>Yolo srl</Denominazione>
+                </Anagrafica>
+            </DatiAnagrafici>
+            <Sede>
+                <Indirizzo>via Tosio </Indirizzo>
+                <NumeroCivico>27</NumeroCivico>
+                <CAP>25121</CAP>
+                <Comune>BRESCIA</Comune>
+                <Provincia>BS</Provincia>
+                <Nazione>IT</Nazione>
+            </Sede>
+        </CessionarioCommittente>
+        <TerzoIntermediarioOSoggettoEmittente>
+
+        <DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>04228480408</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>BLUENEXT SRL</Denominazione></Anagrafica></DatiAnagrafici></TerzoIntermediarioOSoggettoEmittente>
+        <SoggettoEmittente>TZ</SoggettoEmittente>
+    </FatturaElettronicaHeader>
+    <FatturaElettronicaBody>
+        <DatiGenerali>
+            <DatiGeneraliDocumento>
+                <TipoDocumento>TD01</TipoDocumento>
+                <Divisa>EUR</Divisa>
+                <Data>2025-01-20</Data>
+                <Numero>8</Numero>
+                <ImportoTotaleDocumento>475.80</ImportoTotaleDocumento>
+                <Causale>Fattura immediata (TD01) del 20/01/2025 N.ro 8</Causale>
+            </DatiGeneraliDocumento>
+        </DatiGenerali>
+        <DatiBeniServizi>
+            <DettaglioLinee>
+                <NumeroLinea>1</NumeroLinea>
+                <Descrizione>Realizzazione landing page Seta Beauty Clinic e campagna Ads</Descrizione>
+                <Quantita>1.00000</Quantita>
+                <PrezzoUnitario>390.00000</PrezzoUnitario>
+                <PrezzoTotale>390.00</PrezzoTotale>
+                <AliquotaIVA>22.00</AliquotaIVA>
+            </DettaglioLinee>
+            <DettaglioLinee>
+                <NumeroLinea>2</NumeroLinea>
+                <Descrizione>Riga ausiliaria contenente informazioni tecniche e aggiuntive del documento</Descrizione>
+                <Quantita>1.00000</Quantita>
+                <PrezzoUnitario>0.00</PrezzoUnitario>
+                <PrezzoTotale>0.00</PrezzoTotale>
+                <AliquotaIVA>22.00</AliquotaIVA>
+                <AltriDatiGestionali>
+                    <TipoDato>AswTRiga</TipoDato>
+                    <RiferimentoTesto>Informazioni documento #ID#</RiferimentoTesto>
+                </AltriDatiGestionali>
+                <AltriDatiGestionali>
+                    <TipoDato>AswTipoDoc</TipoDato>
+                    <RiferimentoTesto>Fattura #TPD01#</RiferimentoTesto>
+                </AltriDatiGestionali>
+                <AltriDatiGestionali>
+                    <TipoDato>AswCarDoc</TipoDato>
+                    <RiferimentoTesto>Vendita Diretta #CD01#</RiferimentoTesto>
+                </AltriDatiGestionali>
+                <AltriDatiGestionali>
+                    <TipoDato>AswRelStd</TipoDato>
+                    <RiferimentoTesto>Versione #Asw0103#</RiferimentoTesto>
+                </AltriDatiGestionali>
+                <AltriDatiGestionali>
+                    <TipoDato>AswSwHouse</TipoDato>
+                    <RiferimentoTesto>Bluenext Srl / Fatture Online / versione 3.14.34.0</RiferimentoTesto>
+                </AltriDatiGestionali>
+                <AltriDatiGestionali>
+                    <TipoDato>AswTipoPag</TipoDato>
+                    <RiferimentoTesto>Bonifico bancario #TP06#</RiferimentoTesto>
+                    <RiferimentoNumero>1.00</RiferimentoNumero>
+                </AltriDatiGestionali>
+            </DettaglioLinee>
+            <DatiRiepilogo>
+                <AliquotaIVA>22.00</AliquotaIVA>
+                <ImponibileImporto>390.00</ImponibileImporto>
+                <Imposta>85.80</Imposta>
+                <EsigibilitaIVA>I</EsigibilitaIVA>
+            </DatiRiepilogo>
+        </DatiBeniServizi>
+        <DatiPagamento>
+            <CondizioniPagamento>TP02</CondizioniPagamento>
+            <DettaglioPagamento>
+                <ModalitaPagamento>MP05</ModalitaPagamento>
+                <DataScadenzaPagamento>2025-01-20</DataScadenzaPagamento>
+                <ImportoPagamento>475.80</ImportoPagamento>
+                <IBAN>IT46V0306912604100000007586</IBAN>
+                <ABI>03069</ABI>
+                <CAB>12604</CAB>
+                <BIC>BCITITMMXXX</BIC>
+            </DettaglioPagamento>
+        </DatiPagamento>
+    </FatturaElettronicaBody>
+</ns3:FatturaElettronica>
