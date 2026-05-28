@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, ChevronDown, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, Check, X } from "lucide-react";
 import { PeriodFilter } from "@/components/ui/period-filter";
 import {
   periodToQueryString,
@@ -36,22 +36,24 @@ export function DashboardPeriodBar({ initialPeriod }: { initialPeriod: PeriodVal
     router.push(qs ? `/?${qs}` : "/");
   }
 
-  function setYear(y: number) {
-    setBarYear(y);
-    apply({ kind: "full-year", year: y });
+  // Toggle helper: se "to" è già attivo, riapplica all (reset). Altrimenti applica "to".
+  function toggle(condition: boolean, to: PeriodValue) {
+    if (condition) apply({ kind: "all" });
+    else apply(to);
   }
 
   function applyQuarterRolling() {
-    apply({ kind: "quarter" });
+    toggle(isQuarterRolling, { kind: "quarter" });
   }
   function applyHalfYearRolling() {
-    apply({ kind: "half-year" });
+    toggle(isHalfYearRolling, { kind: "half-year" });
   }
   function applyYearRolling() {
-    apply({ kind: "year" });
+    toggle(isYearRolling, { kind: "year" });
   }
   function applySpecificQuarter(q: 1 | 2 | 3 | 4) {
-    apply({ kind: "quarter-of-year", year: barYear, quarter: q });
+    const isSame = activeQuarter === q;
+    toggle(isSame, { kind: "quarter-of-year", year: barYear, quarter: q });
   }
 
   const isFullYearActive =
@@ -64,44 +66,42 @@ export function DashboardPeriodBar({ initialPeriod }: { initialPeriod: PeriodVal
     (initialPeriod.year ?? currentYear) === barYear
       ? initialPeriod.quarter
       : null;
+  const hasAnyFilter = initialPeriod.kind !== "all";
 
   return (
     <div className="flex items-center gap-2 flex-wrap justify-end">
-      {/* Selettore anno: al cambio applica subito "Anno X" */}
-      <div
-        className={cn(
-          "inline-flex items-center gap-0.5 h-8 rounded-md border overflow-hidden",
-          isFullYearActive
-            ? "border-foreground bg-foreground text-background"
-            : "border-input bg-background text-foreground",
-        )}
-      >
+      {/* Selettore anno: navigatore sempre neutro (toggle solo se cliccato il
+          label per "Anno X"). Le frecce cambiano l'anno senza applicare nulla. */}
+      <div className="inline-flex items-center gap-0.5 h-8 rounded-md border border-input bg-background text-foreground overflow-hidden">
         <button
           type="button"
-          onClick={() => setYear(barYear - 1)}
-          className={cn(
-            "h-full px-2 transition-colors",
-            isFullYearActive ? "hover:bg-background/10" : "hover:bg-muted",
-          )}
+          onClick={() => setBarYear(barYear - 1)}
+          className="h-full px-2 hover:bg-muted transition-colors"
           aria-label="Anno precedente"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
-          onClick={() => setYear(barYear)}
-          className="px-2 text-xs font-medium tabular-nums"
-          title={`Mostra anno ${barYear}`}
+          onClick={() => toggle(isFullYearActive, { kind: "full-year", year: barYear })}
+          className={cn(
+            "px-2 text-xs font-medium tabular-nums h-full transition-colors",
+            isFullYearActive
+              ? "bg-foreground text-background"
+              : "hover:bg-muted",
+          )}
+          title={
+            isFullYearActive
+              ? `Rimuovi filtro anno ${barYear}`
+              : `Mostra anno ${barYear}`
+          }
         >
           {barYear}
         </button>
         <button
           type="button"
-          onClick={() => setYear(barYear + 1)}
-          className={cn(
-            "h-full px-2 transition-colors",
-            isFullYearActive ? "hover:bg-background/10" : "hover:bg-muted",
-          )}
+          onClick={() => setBarYear(barYear + 1)}
+          className="h-full px-2 hover:bg-muted transition-colors"
           aria-label="Anno successivo"
         >
           <ChevronRight className="h-3.5 w-3.5" />
@@ -134,6 +134,19 @@ export function DashboardPeriodBar({ initialPeriod }: { initialPeriod: PeriodVal
 
       {/* PeriodFilter: solo "Personalizzato" → apre direttamente il calendario */}
       <PeriodFilter value={initialPeriod} onChange={apply} mode="range-only" />
+
+      {/* Reset visibile solo se c'è un filtro attivo */}
+      {hasAnyFilter && (
+        <button
+          type="button"
+          onClick={() => apply({ kind: "all" })}
+          className="h-8 inline-flex items-center gap-1 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+          title="Rimuovi tutti i filtri"
+        >
+          <X className="h-3.5 w-3.5" />
+          Reset
+        </button>
+      )}
     </div>
   );
 }
