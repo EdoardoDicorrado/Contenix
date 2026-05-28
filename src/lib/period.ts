@@ -9,6 +9,7 @@
  *  - `all`: nessun filtro
  *  - `month`: un mese specifico (campo `month` = "YYYY-MM")
  *  - `quarter`: ultimi 3 mesi rolling
+ *  - `half-year`: ultimi 6 mesi rolling
  *  - `ytd`: dall'1 gennaio dell'anno (default: corrente) fino a oggi
  *  - `year`: ultimi 12 mesi rolling
  *  - `full-year`: anno solare intero (campo `year`)
@@ -19,6 +20,7 @@ export type PeriodKind =
   | "all"
   | "month"
   | "quarter"
+  | "half-year"
   | "ytd"
   | "year"
   | "full-year"
@@ -57,6 +59,8 @@ export function describePeriod(p: PeriodValue): string {
       return p.month ? formatMonth(p.month) : "Mese…";
     case "quarter":
       return "Ultimi 3 mesi";
+    case "half-year":
+      return "Ultimi 6 mesi";
     case "ytd": {
       const y = p.year ?? curYear;
       return y === curYear ? "Anno corrente" : `Da inizio ${y}`;
@@ -109,6 +113,11 @@ export function periodToWindow(p: PeriodValue): { from?: Date; to?: Date } {
     case "quarter":
       return {
         from: new Date(Date.UTC(curY, curM - 2, 1)),
+        to: new Date(Date.UTC(curY, curM + 1, 1)),
+      };
+    case "half-year":
+      return {
+        from: new Date(Date.UTC(curY, curM - 5, 1)),
         to: new Date(Date.UTC(curY, curM + 1, 1)),
       };
     case "ytd": {
@@ -187,7 +196,7 @@ export function periodFromSearchParams(sp: {
   if (!k || k === "all") return { kind: "all" };
   if (k === "month") return { kind: "month", month: sp.month };
   if (k === "range") return { kind: "range", from: sp.from, to: sp.to };
-  if (k === "quarter" || k === "year") return { kind: k };
+  if (k === "quarter" || k === "half-year" || k === "year") return { kind: k };
   if (k === "ytd") return { kind: "ytd", year: sp.year ? Number(sp.year) : undefined };
   if (k === "full-year") return { kind: "full-year", year: sp.year ? Number(sp.year) : undefined };
   if (k === "quarter-of-year") {

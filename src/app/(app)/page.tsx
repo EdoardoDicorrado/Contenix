@@ -28,19 +28,13 @@ type SP = Promise<{
 
 export default async function DashboardPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const period = periodFromSearchParams(sp);
-  // Se "all", uso il mese corrente come finestra per KPI/top (per dare sempre dati utili)
-  const window =
-    period.kind === "all"
-      ? (() => {
-          const now = new Date();
-          return {
-            from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
-            to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
-          };
-        })()
-      : periodToWindow(period);
-  const periodLabel = period.kind === "all" ? "Mese corrente" : describePeriod(period);
+  const rawPeriod = periodFromSearchParams(sp);
+  // Default dashboard: anno corrente intero (full-year).
+  const currentYear = new Date().getUTCFullYear();
+  const period: typeof rawPeriod =
+    rawPeriod.kind === "all" ? { kind: "full-year", year: currentYear } : rawPeriod;
+  const window = periodToWindow(period);
+  const periodLabel = describePeriod(period);
 
   const [
     kpi,

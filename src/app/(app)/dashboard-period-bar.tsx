@@ -12,18 +12,18 @@ import { cn } from "@/lib/utils";
 
 /**
  * Barra periodo della dashboard:
- *  - Selettore anno (← anno →)
- *  - Quick buttons: Mese corrente · Ultimi 3 mesi · Da inizio anno · Anno intero
- *  - Dropdown trimestre Q1-Q4 (applicato all'anno selezionato)
- *  - PeriodFilter completo con calendari (Personalizzato, Mese specifico)
+ *  - Selettore anno (← anno →) — al cambio applica subito "Anno X"
+ *  - Quick buttons rolling: Ultimi 3 / 6 / 12 mesi
+ *  - Dropdown trimestre Q1-Q4 (sull'anno selezionato)
+ *  - PeriodFilter completo (Mese specifico, Personalizzato)
+ *
+ * Default dashboard = full-year dell'anno corrente.
  */
 export function DashboardPeriodBar({ initialPeriod }: { initialPeriod: PeriodValue }) {
   const router = useRouter();
   const currentYear = new Date().getUTCFullYear();
-  const currentMonth = new Date().getUTCMonth();
 
-  // Anno corrente nella barra: deriva da `initialPeriod.year` per i kind che lo usano,
-  // altrimenti dall'anno odierno.
+  // Anno mostrato nel selettore. Deriva dall'initialPeriod, fallback corrente.
   const initialBarYear =
     initialPeriod.year ??
     (initialPeriod.kind === "month" && initialPeriod.month
@@ -36,34 +36,29 @@ export function DashboardPeriodBar({ initialPeriod }: { initialPeriod: PeriodVal
     router.push(qs ? `/?${qs}` : "/");
   }
 
-  function applyQuickMonth() {
-    if (barYear !== currentYear) return; // disabilitato fuori dall'anno corrente
-    const key = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-    apply({ kind: "month", month: key });
+  function setYear(y: number) {
+    setBarYear(y);
+    apply({ kind: "full-year", year: y });
   }
-  function applyQuickQuarter() {
+
+  function applyQuarterRolling() {
     apply({ kind: "quarter" });
   }
-  function applyQuickYtd() {
-    apply({ kind: "ytd", year: barYear });
+  function applyHalfYearRolling() {
+    apply({ kind: "half-year" });
   }
-  function applyQuickFullYear() {
-    apply({ kind: "full-year", year: barYear });
+  function applyYearRolling() {
+    apply({ kind: "year" });
   }
-  function applyQuarter(q: 1 | 2 | 3 | 4) {
+  function applySpecificQuarter(q: 1 | 2 | 3 | 4) {
     apply({ kind: "quarter-of-year", year: barYear, quarter: q });
   }
 
-  // Match attivo
-  const isQuickMonth =
-    initialPeriod.kind === "month" &&
-    initialPeriod.month ===
-      `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-  const isQuickQuarter = initialPeriod.kind === "quarter";
-  const isQuickYtd =
-    initialPeriod.kind === "ytd" && (initialPeriod.year ?? currentYear) === barYear;
-  const isQuickFullYear =
+  const isFullYearActive =
     initialPeriod.kind === "full-year" && (initialPeriod.year ?? currentYear) === barYear;
+  const isQuarterRolling = initialPeriod.kind === "quarter";
+  const isHalfYearRolling = initialPeriod.kind === "half-year";
+  const isYearRolling = initialPeriod.kind === "year";
   const activeQuarter =
     initialPeriod.kind === "quarter-of-year" &&
     (initialPeriod.year ?? currentYear) === barYear
@@ -72,64 +67,72 @@ export function DashboardPeriodBar({ initialPeriod }: { initialPeriod: PeriodVal
 
   return (
     <div className="flex items-center gap-2 flex-wrap justify-end">
-      {/* Selettore anno */}
-      <div className="inline-flex items-center gap-0.5 h-8 rounded-md border border-input bg-background overflow-hidden">
+      {/* Selettore anno: al cambio applica subito "Anno X" */}
+      <div
+        className={cn(
+          "inline-flex items-center gap-0.5 h-8 rounded-md border overflow-hidden",
+          isFullYearActive
+            ? "border-foreground bg-foreground text-background"
+            : "border-input bg-background text-foreground",
+        )}
+      >
         <button
           type="button"
-          onClick={() => setBarYear(barYear - 1)}
-          className="h-full px-2 hover:bg-muted text-foreground"
+          onClick={() => setYear(barYear - 1)}
+          className={cn(
+            "h-full px-2 transition-colors",
+            isFullYearActive ? "hover:bg-background/10" : "hover:bg-muted",
+          )}
           aria-label="Anno precedente"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="px-2 text-xs font-medium tabular-nums">{barYear}</span>
         <button
           type="button"
-          onClick={() => setBarYear(barYear + 1)}
-          className="h-full px-2 hover:bg-muted text-foreground"
+          onClick={() => setYear(barYear)}
+          className="px-2 text-xs font-medium tabular-nums"
+          title={`Mostra anno ${barYear}`}
+        >
+          {barYear}
+        </button>
+        <button
+          type="button"
+          onClick={() => setYear(barYear + 1)}
+          className={cn(
+            "h-full px-2 transition-colors",
+            isFullYearActive ? "hover:bg-background/10" : "hover:bg-muted",
+          )}
           aria-label="Anno successivo"
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Quick buttons */}
-      <QuickButton
-        label="Mese corrente"
-        active={isQuickMonth}
-        onClick={applyQuickMonth}
-        disabled={barYear !== currentYear}
-        title={
-          barYear !== currentYear
-            ? "Disponibile solo nell'anno corrente"
-            : "Mostra solo il mese in corso"
-        }
-      />
+      {/* Quick rolling */}
       <QuickButton
         label="Ultimi 3 mesi"
-        active={isQuickQuarter}
-        onClick={applyQuickQuarter}
-        title="Trimestre rolling dall'oggi"
+        active={isQuarterRolling}
+        onClick={applyQuarterRolling}
       />
       <QuickButton
-        label={`Da inizio ${barYear}`}
-        active={isQuickYtd}
-        onClick={applyQuickYtd}
+        label="Ultimi 6 mesi"
+        active={isHalfYearRolling}
+        onClick={applyHalfYearRolling}
       />
       <QuickButton
-        label={`Anno ${barYear}`}
-        active={isQuickFullYear}
-        onClick={applyQuickFullYear}
+        label="Ultimi 12 mesi"
+        active={isYearRolling}
+        onClick={applyYearRolling}
       />
 
       {/* Dropdown trimestre */}
       <QuarterDropdown
         year={barYear}
         active={activeQuarter ?? null}
-        onPick={(q) => applyQuarter(q)}
+        onPick={applySpecificQuarter}
       />
 
-      {/* PeriodFilter completo (per Mese specifico / Personalizzato) */}
+      {/* PeriodFilter completo (Mese specifico / Personalizzato) */}
       <PeriodFilter value={initialPeriod} onChange={apply} />
     </div>
   );
@@ -139,23 +142,17 @@ function QuickButton({
   label,
   active,
   onClick,
-  disabled,
-  title,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
-  disabled?: boolean;
-  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
-      title={title}
       className={cn(
-        "h-8 inline-flex items-center rounded-md border px-2.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        "h-8 inline-flex items-center rounded-md border px-2.5 text-xs font-medium transition-colors",
         active
           ? "border-foreground bg-foreground text-background hover:opacity-90"
           : "border-input bg-background text-foreground hover:bg-muted",
