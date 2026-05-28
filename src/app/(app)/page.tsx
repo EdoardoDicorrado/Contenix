@@ -4,24 +4,43 @@ import {
   getInvoiceSummary,
   getKpiOverview,
   getMonthlyTimeseries,
-  getTopCategoriesForMonth,
-  getTopVendorsForMonth,
+  getTopCategoriesInWindow,
+  getTopVendorsInWindow,
 } from "@/lib/db/queries/dashboard";
 import { forecastTimeseries } from "@/lib/forecast";
+import {
+  describePeriod,
+  periodFromSearchParams,
+  periodToWindow,
+} from "@/lib/period";
 import { DashboardKpi } from "./dashboard-kpi";
 import { DashboardTrend, type TrendPoint } from "./dashboard-trend";
 import { DashboardBreakdown } from "./dashboard-breakdown";
 import { DashboardSecondary } from "./dashboard-secondary";
+import { DashboardPeriodBar } from "./dashboard-period-bar";
 
-const MONTH_LABEL = [
-  "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
-  "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
-];
+type SP = Promise<{
+  period?: string;
+  month?: string;
+  from?: string;
+  to?: string;
+}>;
 
-export default async function DashboardPage() {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth() + 1;
+export default async function DashboardPage({ searchParams }: { searchParams: SP }) {
+  const sp = await searchParams;
+  const period = periodFromSearchParams(sp);
+  // Se "all", uso il mese corrente come finestra per KPI/top (per dare sempre dati utili)
+  const window =
+    period.kind === "all"
+      ? (() => {
+          const now = new Date();
+          return {
+            from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+            to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+          };
+        })()
+      : periodToWindow(period);
+  const periodLabel = period.kind === "all" ? "Mese corrente" : describePeriod(period);
 
   const [
     kpi,
@@ -33,23 +52,20 @@ export default async function DashboardPage() {
     employeeSummary,
     topVendors,
   ] = await Promise.all([
-    getKpiOverview(),
+    getKpiOverview(window),
     getMonthlyTimeseries(12),
-    getTopCategoriesForMonth(year, month, "expense", 5),
-    getTopCategoriesForMonth(year, month, "income", 5),
+    getTopCategoriesInWindow(window, "expense", 5),
+    getTopCategoriesInWindow(window, "income", 5),
     getAccountsBalances(),
     getInvoiceSummary(),
     getEmployeeSummary(),
-    getTopVendorsForMonth(year, month, 5),
+    getTopVendorsInWindow(window, 5),
   ]);
 
-  // Forecast 3 mesi avanti per ogni serie
-  const incomeHistory = timeseries.map((p) => p.income);
-  const expenseHistory = timeseries.map((p) => p.expense);
-  const netHistory = timeseries.map((p) => p.net);
-  const incomeF = forecastTimeseries(incomeHistory, 3);
-  const expenseF = forecastTimeseries(expenseHistory, 3);
-  const netF = forecastTimeseries(netHistory, 3);
+  // Forecast 3 mesi avanti
+  const incomeF = forecastTimeseries(timeseries.map((p) => p.income), 3);
+  const expenseF = forecastTimeseries(timeseries.map((p) => p.expense), 3);
+  const netF = forecastTimeseries(timeseries.map((p) => p.net), 3);
 
   const forecastPoints: TrendPoint[] = incomeF.map((_, i) => {
     const lastMonth = timeseries[timeseries.length - 1].month;
@@ -72,17 +88,18 @@ export default async function DashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-5">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {MONTH_LABEL[month - 1]} {year} · panoramica finanziaria
-        </p>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Panoramica finanziaria · {periodLabel}
+          </p>
+        </div>
+        <DashboardPeriodBar initialPeriod={period} />
       </div>
 
-      {/* Sezione 1: KPI */}
-      <DashboardKpi data={kpi} />
+      <DashboardKpi data={kpi} periodLabel={periodLabel} />
 
-      {/* Sezione 2: andamento + forecast */}
       <DashboardTrend
         history={timeseries.map((p) => ({
           month: p.month,
@@ -93,27 +110,14 @@ export default async function DashboardPage() {
         forecast={forecastPoints}
       />
 
-      {/* Sezione 3: indicatore + top categorie */}
       <DashboardBreakdown
         income={kpi.current.income}
         expense={kpi.current.expense}
-        topExpenses={topExpenses.map((c) => ({
-          categoryId: c.categoryId,
-          name: c.name,
-          color: c.color,
-          total: c.total,
-          count: c.count,
-        }))}
-        topIncomes={topIncomes.map((c) => ({
-          categoryId: c.categoryId,
-          name: c.name,
-          color: c.color,
-          total: c.total,
-          count: c.count,
-        }))}
+        topExpenses={topExpenses}
+        topIncomes={topIncomes}
+        periodLabel={periodLabel}
       />
 
-      {/* Sezione 4: secondari */}
       <DashboardSecondary
         accounts={accounts}
         invoices={invoiceSummary.topPending}
@@ -124,6 +128,7 @@ export default async function DashboardPage() {
         }}
         employees={employeeSummary}
         topVendors={topVendors}
+        periodLabel={periodLabel}
       />
     </div>
   );

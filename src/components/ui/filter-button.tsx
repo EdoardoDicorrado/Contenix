@@ -93,13 +93,15 @@ export function FilterButton<T extends string>({
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs",
+          "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
           !isDefault
-            ? "border-blue-500 bg-blue-50 text-blue-900 hover:bg-blue-100"
+            ? "border-foreground bg-foreground text-background hover:opacity-90"
             : "border-input bg-background text-foreground hover:bg-muted",
         )}
       >
-        <span className="text-muted-foreground">{label}:</span>
+        <span className={cn("opacity-70", !isDefault && "text-background/80")}>
+          {label}:
+        </span>
         <span className="font-medium max-w-32 truncate">{currentLabel}</span>
         {!isDefault && (
           <span
@@ -112,7 +114,7 @@ export function FilterButton<T extends string>({
                 clearFilter(e as unknown as React.MouseEvent);
               }
             }}
-            className="ml-0.5 -mr-1 p-0.5 rounded hover:bg-blue-200 cursor-pointer"
+            className="ml-0.5 -mr-1 p-0.5 rounded hover:bg-background/20 cursor-pointer"
             aria-label="Rimuovi filtro"
           >
             <X className="h-3 w-3" />
@@ -130,12 +132,14 @@ export function FilterButton<T extends string>({
               type="button"
               onClick={() => pick(opt.value)}
               className={cn(
-                "w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-sm hover:bg-muted text-left",
-                opt.value === value && "font-medium",
+                "w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-sm text-left transition-colors",
+                opt.value === value
+                  ? "bg-foreground text-background font-medium"
+                  : "hover:bg-muted",
               )}
             >
               <span className="flex-1">{opt.label}</span>
-              {opt.value === value && <Check className="h-3.5 w-3.5 text-blue-600" />}
+              {opt.value === value && <Check className="h-3.5 w-3.5" />}
             </button>
           ))}
         </div>
@@ -158,21 +162,26 @@ export function FilterButton<T extends string>({
                 className={cn(
                   "w-full flex items-start gap-2 px-3 py-2 rounded-md text-left transition-colors",
                   opt.value === value
-                    ? "bg-blue-50 text-blue-900"
+                    ? "bg-foreground text-background"
                     : "hover:bg-muted",
                 )}
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium">{opt.label}</div>
                   {opt.description && (
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                    <div
+                      className={cn(
+                        "text-[11px] mt-0.5",
+                        opt.value === value
+                          ? "text-background/70"
+                          : "text-muted-foreground",
+                      )}
+                    >
                       {opt.description}
                     </div>
                   )}
                 </div>
-                {opt.value === value && (
-                  <Check className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-                )}
+                {opt.value === value && <Check className="h-4 w-4 shrink-0 mt-0.5" />}
               </button>
             ))}
           </div>

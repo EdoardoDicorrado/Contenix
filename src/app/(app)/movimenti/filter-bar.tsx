@@ -2,16 +2,31 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Search as SearchIcon, X, Check, ChevronDown } from "lucide-react";
+import { FilterButton, type FilterOption } from "@/components/ui/filter-button";
+import { PeriodFilter } from "@/components/ui/period-filter";
 import {
-  ChevronDown,
-  Search as SearchIcon,
-  X,
-  Check,
-} from "lucide-react";
+  periodFromSearchParams,
+  periodToQueryString,
+  type PeriodValue,
+} from "@/lib/period";
 import { cn } from "@/lib/utils";
 
-type CategoryOpt = { id: string; name: string; type: "income" | "expense"; color: string | null };
+type CategoryOpt = {
+  id: string;
+  name: string;
+  type: "income" | "expense";
+  color: string | null;
+};
 type AccountOpt = { id: string; name: string };
+
+type Initial = {
+  type: "income" | "expense" | undefined;
+  accountId: string | undefined;
+  categoryIds: string[];
+  search: string;
+  period: PeriodValue;
+};
 
 export function FilterBar({
   categories,
@@ -20,30 +35,22 @@ export function FilterBar({
 }: {
   categories: CategoryOpt[];
   accounts: AccountOpt[];
-  initial: {
-    type: "income" | "expense" | undefined;
-    accountId: string | undefined;
-    categoryIds: string[];
-    search: string;
-    month: string;
-  };
+  initial: Initial;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
-
   const [search, setSearch] = useState(initial.search);
 
-  function buildUrl(patch: Partial<Record<string, string | string[] | undefined>>) {
+  function buildUrl(
+    patch: Partial<Record<string, string | string[] | undefined | null>>,
+  ) {
     const params = new URLSearchParams();
-    // Riprendi tutti i param attuali
     for (const [k, v] of sp.entries()) {
-      // Saltiamo quelli che stiamo per riscrivere
       if (k in patch) continue;
       params.append(k, v);
     }
-    // Applica i nuovi
     for (const [k, v] of Object.entries(patch)) {
-      if (v === undefined || v === "") continue;
+      if (v == null || v === "") continue;
       if (Array.isArray(v)) {
         for (const x of v) params.append(k, x);
       } else {
@@ -54,7 +61,9 @@ export function FilterBar({
     return `/movimenti${qs ? `?${qs}` : ""}`;
   }
 
-  function pushPatch(patch: Partial<Record<string, string | string[] | undefined>>) {
+  function pushPatch(
+    patch: Partial<Record<string, string | string[] | undefined | null>>,
+  ) {
     router.push(buildUrl(patch));
   }
 
@@ -63,16 +72,50 @@ export function FilterBar({
     pushPatch({ search: search.trim() || undefined });
   }
 
+  function setPeriod(p: PeriodValue) {
+    // Period gestisce 4 param: period, month, from, to. Devo prima azzerarli tutti.
+    const cleared = {
+      period: undefined as string | undefined,
+      month: undefined as string | undefined,
+      from: undefined as string | undefined,
+      to: undefined as string | undefined,
+    };
+    if (p.kind === "all") {
+      pushPatch(cleared);
+      return;
+    }
+    cleared.period = p.kind;
+    if (p.kind === "month") cleared.month = p.month;
+    if (p.kind === "range") {
+      cleared.from = p.from;
+      cleared.to = p.to;
+    }
+    pushPatch(cleared);
+  }
+
   const hasAnyFilter =
-    !!initial.type ||
-    !!initial.accountId ||
+    initial.type !== undefined ||
+    initial.accountId !== undefined ||
     initial.categoryIds.length > 0 ||
     !!initial.search ||
-    !!initial.month;
+    initial.period.kind !== "all";
+
+  const typeOptions: FilterOption<"all" | "income" | "expense">[] = [
+    { value: "all", label: "Tipo: tutti" },
+    { value: "income", label: "↑ Entrate" },
+    { value: "expense", label: "↓ Uscite" },
+  ];
+  const accountOptions: FilterOption<string>[] = [
+    { value: "", label: "Conto: tutti" },
+    ...accounts.map((a) => ({ value: a.id, label: a.name })),
+  ];
 
   return (
     <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-border bg-background">
-      <form onSubmit={handleSearchSubmit} className="flex items-center gap-1 flex-1 min-w-48">
+      <form
+        onSubmit={handleSearchSubmit}
+        className="flex items-center gap-1 flex-1 min-w-48"
+      >
         <div className="relative flex-1">
           <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <input
@@ -84,107 +127,29 @@ export function FilterBar({
         </div>
       </form>
 
-      <FilterChip
+      <PeriodFilter value={initial.period} onChange={setPeriod} />
+
+      <FilterButton
         label="Tipo"
-        valueLabel={initial.type === "income" ? "Entrate" : initial.type === "expense" ? "Uscite" : null}
-        onClear={() => pushPatch({ type: undefined })}
-      >
-        {(close) => (
-          <div className="p-1 min-w-40">
-            {[
-              { value: undefined, label: "Tutti" },
-              { value: "income" as const, label: "↑ Entrate" },
-              { value: "expense" as const, label: "↓ Uscite" },
-            ].map((opt) => (
-              <button
-                key={String(opt.value)}
-                type="button"
-                onClick={() => {
-                  pushPatch({ type: opt.value });
-                  close();
-                }}
-                className={cn(
-                  "w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-sm hover:bg-muted text-left",
-                  initial.type === opt.value && "font-medium",
-                )}
-              >
-                <span>{opt.label}</span>
-                {initial.type === opt.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
-              </button>
-            ))}
-          </div>
-        )}
-      </FilterChip>
-
-      <FilterChip
-        label="Conto"
-        valueLabel={
-          initial.accountId ? accounts.find((a) => a.id === initial.accountId)?.name ?? null : null
+        options={typeOptions}
+        value={initial.type ?? "all"}
+        onChange={(v) =>
+          pushPatch({ type: v === "all" ? undefined : v })
         }
-        onClear={() => pushPatch({ accountId: undefined })}
-      >
-        {(close) => (
-          <div className="p-1 min-w-48 max-h-72 overflow-auto">
-            <button
-              type="button"
-              onClick={() => {
-                pushPatch({ accountId: undefined });
-                close();
-              }}
-              className={cn(
-                "w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-sm hover:bg-muted text-left",
-                !initial.accountId && "font-medium",
-              )}
-            >
-              <span>Tutti</span>
-              {!initial.accountId && <Check className="h-3.5 w-3.5 text-blue-600" />}
-            </button>
-            {accounts.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => {
-                  pushPatch({ accountId: a.id });
-                  close();
-                }}
-                className={cn(
-                  "w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-sm hover:bg-muted text-left",
-                  initial.accountId === a.id && "font-medium",
-                )}
-              >
-                <span className="truncate">{a.name}</span>
-                {initial.accountId === a.id && <Check className="h-3.5 w-3.5 text-blue-600" />}
-              </button>
-            ))}
-          </div>
-        )}
-      </FilterChip>
+      />
 
-      <CategoryFilterChip
+      <FilterButton
+        label="Conto"
+        options={accountOptions}
+        value={initial.accountId ?? ""}
+        onChange={(v) => pushPatch({ accountId: v || undefined })}
+      />
+
+      <CategoryMultiFilter
         categories={categories}
         selectedIds={initial.categoryIds}
         onChange={(ids) => pushPatch({ categoryIds: ids.length > 0 ? ids : undefined })}
       />
-
-      <FilterChip
-        label="Mese"
-        valueLabel={initial.month ? formatMonthLabel(initial.month) : null}
-        onClear={() => pushPatch({ month: undefined })}
-      >
-        {(close) => (
-          <div className="p-2 min-w-44">
-            <input
-              type="month"
-              defaultValue={initial.month}
-              onChange={(e) => {
-                pushPatch({ month: e.target.value || undefined });
-                close();
-              }}
-              className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-            />
-          </div>
-        )}
-      </FilterChip>
 
       {hasAnyFilter && (
         <button
@@ -200,22 +165,22 @@ export function FilterBar({
 }
 
 // ===================================================================
-// GENERIC POPOVER CHIP
+// CATEGORY MULTI-SELECT (popover con checkbox + search)
 // ===================================================================
 
-function FilterChip({
-  label,
-  valueLabel,
-  onClear,
-  children,
+function CategoryMultiFilter({
+  categories,
+  selectedIds,
+  onChange,
 }: {
-  label: string;
-  valueLabel: string | null;
-  onClear?: () => void;
-  children: (close: () => void) => React.ReactNode;
+  categories: CategoryOpt[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const isActive = selectedIds.length > 0;
 
   useEffect(() => {
     if (!open) return;
@@ -233,83 +198,7 @@ function FilterChip({
     };
   }, [open]);
 
-  const active = valueLabel != null;
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className={cn(
-          "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs",
-          active
-            ? "border-blue-500 bg-blue-50 text-blue-900 hover:bg-blue-100"
-            : "border-input bg-background text-foreground hover:bg-muted",
-        )}
-      >
-        <span className="text-muted-foreground">{label}:</span>
-        <span className="font-medium max-w-32 truncate">{valueLabel ?? "Tutti"}</span>
-        {active && onClear && (
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              onClear();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                onClear();
-              }
-            }}
-            className="ml-0.5 -mr-1 p-0.5 rounded hover:bg-blue-200 cursor-pointer"
-            aria-label="Rimuovi filtro"
-          >
-            <X className="h-3 w-3" />
-          </span>
-        )}
-        {!active && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
-      </button>
-      {open && (
-        <div className="absolute z-50 left-0 mt-1 rounded-md border border-border bg-background shadow-lg">
-          {children(() => setOpen(false))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ===================================================================
-// CATEGORY MULTI-SELECT (popup con checkbox + search)
-// ===================================================================
-
-function CategoryFilterChip({
-  categories,
-  selectedIds,
-  onChange,
-}: {
-  categories: CategoryOpt[];
-  selectedIds: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const [search, setSearch] = useState("");
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-
-  const valueLabel =
-    selectedIds.length === 0
-      ? null
-      : selectedIds.length === 1
-        ? categories.find((c) => c.id === selectedIds[0])?.name ?? null
-        : `${selectedIds.length} categorie`;
-
-  function toggle(id: string) {
-    const next = selectedSet.has(id)
-      ? selectedIds.filter((x) => x !== id)
-      : [...selectedIds, id];
-    onChange(next);
-  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -320,14 +209,62 @@ function CategoryFilterChip({
   const incomes = filtered.filter((c) => c.type === "income");
   const expenses = filtered.filter((c) => c.type === "expense");
 
+  const valueLabel = isActive
+    ? selectedIds.length === 1
+      ? categories.find((c) => c.id === selectedIds[0])?.name ?? null
+      : `${selectedIds.length} categorie`
+    : null;
+
+  function toggle(id: string) {
+    const next = selectedSet.has(id)
+      ? selectedIds.filter((x) => x !== id)
+      : [...selectedIds, id];
+    onChange(next);
+  }
+
+  function clear(e: React.MouseEvent) {
+    e.stopPropagation();
+    onChange([]);
+  }
+
   return (
-    <FilterChip
-      label="Categoria"
-      valueLabel={valueLabel}
-      onClear={() => onChange([])}
-    >
-      {() => (
-        <div className="p-2 min-w-64">
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
+          isActive
+            ? "border-foreground bg-foreground text-background hover:opacity-90"
+            : "border-input bg-background text-foreground hover:bg-muted",
+        )}
+      >
+        <span className={cn("opacity-70", isActive && "text-background/80")}>
+          Categoria:
+        </span>
+        <span className="font-medium max-w-32 truncate">{valueLabel ?? "Tutte"}</span>
+        {isActive && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={clear}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                clear(e as unknown as React.MouseEvent);
+              }
+            }}
+            className="ml-0.5 -mr-1 p-0.5 rounded hover:bg-background/20 cursor-pointer"
+            aria-label="Rimuovi filtro"
+          >
+            <X className="h-3 w-3" />
+          </span>
+        )}
+        {!isActive && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="absolute z-40 left-0 mt-1 w-64 rounded-md border border-border bg-background shadow-lg p-2">
           <input
             autoFocus
             value={search}
@@ -337,27 +274,15 @@ function CategoryFilterChip({
           />
           <div className="max-h-72 overflow-auto">
             {incomes.length > 0 && (
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 pt-1 pb-0.5">
-                  Entrate
-                </div>
-                {incomes.map((c) => (
-                  <CatOption key={c.id} c={c} checked={selectedSet.has(c.id)} onToggle={() => toggle(c.id)} />
-                ))}
-              </div>
+              <Group label="Entrate" items={incomes} selected={selectedSet} onToggle={toggle} />
             )}
             {expenses.length > 0 && (
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 pt-1.5 pb-0.5">
-                  Uscite
-                </div>
-                {expenses.map((c) => (
-                  <CatOption key={c.id} c={c} checked={selectedSet.has(c.id)} onToggle={() => toggle(c.id)} />
-                ))}
-              </div>
+              <Group label="Uscite" items={expenses} selected={selectedSet} onToggle={toggle} />
             )}
             {filtered.length === 0 && (
-              <div className="text-xs text-muted-foreground p-2 text-center">Nessuna categoria</div>
+              <div className="text-xs text-muted-foreground p-2 text-center">
+                Nessuna categoria
+              </div>
             )}
           </div>
           {selectedIds.length > 0 && (
@@ -368,7 +293,7 @@ function CategoryFilterChip({
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="text-blue-700 hover:underline"
+                className="text-foreground hover:underline"
               >
                 Deseleziona tutte
               </button>
@@ -376,47 +301,54 @@ function CategoryFilterChip({
           )}
         </div>
       )}
-    </FilterChip>
+    </div>
   );
 }
 
-function CatOption({
-  c,
-  checked,
+function Group({
+  label,
+  items,
+  selected,
   onToggle,
 }: {
-  c: CategoryOpt;
-  checked: boolean;
-  onToggle: () => void;
+  label: string;
+  items: CategoryOpt[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-sm">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        className="h-3.5 w-3.5"
-      />
-      <span
-        className="inline-block h-2 w-2 rounded-full shrink-0"
-        style={{ backgroundColor: c.color ?? "#a1a1aa" }}
-      />
-      <span className="truncate">{c.name}</span>
-    </label>
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 pt-1 pb-0.5">
+        {label}
+      </div>
+      {items.map((c) => {
+        const isOn = selected.has(c.id);
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onToggle(c.id)}
+            className={cn(
+              "w-full flex items-center gap-2 px-2 py-1 rounded text-sm text-left transition-colors",
+              isOn ? "bg-foreground text-background" : "hover:bg-muted",
+            )}
+          >
+            <span className="h-3 w-3 rounded-sm border border-current inline-flex items-center justify-center shrink-0">
+              {isOn && <Check className="h-2.5 w-2.5" />}
+            </span>
+            <span
+              className="h-2 w-2 rounded-full shrink-0"
+              style={{ backgroundColor: c.color ?? "#a1a1aa" }}
+            />
+            <span className="truncate">{c.name}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 // ===================================================================
-// UTILS
+// Helper export per la page server
 // ===================================================================
-
-const MONTH_LABELS = [
-  "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
-  "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
-];
-
-function formatMonthLabel(yyyymm: string): string {
-  const [y, m] = yyyymm.split("-").map(Number);
-  if (!y || !m) return yyyymm;
-  return `${MONTH_LABELS[m - 1]} ${y}`;
-}
+export { periodFromSearchParams, periodToQueryString };

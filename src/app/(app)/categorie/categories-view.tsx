@@ -12,11 +12,12 @@ import {
   ArrowUp,
   ArrowDown,
   Loader2,
-  Calendar,
   ArrowUpDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { FilterButton, type FilterOption } from "@/components/ui/filter-button";
+import { PeriodFilter } from "@/components/ui/period-filter";
+import { periodToQueryString, type PeriodValue } from "@/lib/period";
 import { formatCurrency } from "@/lib/utils";
 import { deleteCategoryAction } from "./actions";
 
@@ -42,16 +43,6 @@ type SortMode =
 
 type TypeFilter = "all" | "income" | "expense";
 
-type Period = "month" | "quarter" | "ytd" | "year" | "all";
-
-const PERIOD_OPTIONS: FilterOption<Period>[] = [
-  { value: "all", label: "Sempre", description: "Tutto lo storico." },
-  { value: "month", label: "Mese corrente", description: "Solo il mese in corso." },
-  { value: "quarter", label: "Ultimi 3 mesi", description: "Il mese corrente più i due precedenti." },
-  { value: "ytd", label: "Anno corrente", description: "Da gennaio fino a oggi." },
-  { value: "year", label: "Ultimi 12 mesi", description: "Finestra mobile di 12 mesi." },
-];
-
 const TYPE_OPTIONS: FilterOption<TypeFilter>[] = [
   { value: "all", label: "Tipo: tutti" },
   { value: "expense", label: "Solo uscite" },
@@ -70,11 +61,11 @@ const SORT_OPTIONS: FilterOption<SortMode>[] = [
 
 export function CategoriesView({
   categories,
-  currentPeriod,
+  initialPeriod,
   periodLabel,
 }: {
   categories: CategoryWithStats[];
-  currentPeriod: Period;
+  initialPeriod: PeriodValue;
   periodLabel: string;
 }) {
   const router = useRouter();
@@ -83,9 +74,9 @@ export function CategoriesView({
   const [sort, setSort] = useState<SortMode>("total-desc");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 
-  function setPeriod(p: Period) {
-    const url = p === "all" ? "/categorie" : `/categorie?period=${p}`;
-    router.push(url);
+  function setPeriod(p: PeriodValue) {
+    const qs = periodToQueryString(p);
+    router.push(qs ? `/categorie?${qs}` : "/categorie");
   }
 
   const filtered = useMemo(() => {
@@ -148,14 +139,7 @@ export function CategoriesView({
           )}
         </div>
 
-        <FilterButton
-          label="Periodo"
-          options={PERIOD_OPTIONS}
-          value={currentPeriod}
-          onChange={setPeriod}
-          overlayTitle="Seleziona periodo"
-          overlayIcon={<Calendar className="h-4 w-4 text-blue-600" />}
-        />
+        <PeriodFilter value={initialPeriod} onChange={setPeriod} />
 
         <FilterButton
           label="Tipo"

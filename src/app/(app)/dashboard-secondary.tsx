@@ -43,6 +43,7 @@ export function DashboardSecondary({
   invoiceCounts,
   employees,
   topVendors,
+  periodLabel = "del mese",
 }: {
   accounts: AccountItem[];
   invoices: InvoicePending[];
@@ -54,6 +55,7 @@ export function DashboardSecondary({
     totalRevenue: number;
   };
   topVendors: Array<{ pattern: string; total: number; count: number }>;
+  periodLabel?: string;
 }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -199,7 +201,7 @@ export function DashboardSecondary({
 
       {/* Top vendor */}
       <Card
-        title="Top fornitori del mese"
+        title={`Top fornitori · ${periodLabel.toLowerCase()}`}
         icon={<Store className="h-4 w-4" />}
         href="/movimenti"
       >

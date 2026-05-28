@@ -17,60 +17,15 @@ export async function listCategories(type?: "income" | "expense") {
     .orderBy(asc(categories.type), asc(categories.name));
 }
 
-export type CategoryStatsPeriod =
-  | "month"
-  | "quarter"
-  | "ytd"
-  | "year"
-  | "all";
+export type CategoryStatsWindow = { from?: Date; to?: Date };
 
-/**
- * Calcola la finestra temporale per il periodo richiesto.
- * Riferita al mese/anno corrente (UTC).
- */
-function periodWindow(period: CategoryStatsPeriod): { from?: Date; to?: Date } {
-  const now = new Date();
-  const curMonth = now.getUTCMonth();
-  const curYear = now.getUTCFullYear();
-  switch (period) {
-    case "month": {
-      const from = new Date(Date.UTC(curYear, curMonth, 1));
-      const to = new Date(Date.UTC(curYear, curMonth + 1, 1));
-      return { from, to };
-    }
-    case "quarter": {
-      // Ultimi 3 mesi: mese-2, mese-1, mese corrente
-      const from = new Date(Date.UTC(curYear, curMonth - 2, 1));
-      const to = new Date(Date.UTC(curYear, curMonth + 1, 1));
-      return { from, to };
-    }
-    case "ytd": {
-      // Anno corrente: 1 gennaio fino a fine mese corrente
-      const from = new Date(Date.UTC(curYear, 0, 1));
-      const to = new Date(Date.UTC(curYear, curMonth + 1, 1));
-      return { from, to };
-    }
-    case "year": {
-      // Ultimi 12 mesi rolling
-      const from = new Date(Date.UTC(curYear, curMonth - 11, 1));
-      const to = new Date(Date.UTC(curYear, curMonth + 1, 1));
-      return { from, to };
-    }
-    case "all":
-    default:
-      return {};
-  }
-}
-
-export async function listCategoriesWithStats(period: CategoryStatsPeriod = "all") {
+export async function listCategoriesWithStats(window: CategoryStatsWindow = {}) {
   // Strategia: 3 query separate (categorie / aggregati movimenti / aggregati regole)
   // e merge in memoria. Più affidabile delle subquery correlate di Drizzle e
   // permette comunque a Neon di parallelizzare via Promise.all.
-  const { from, to } = periodWindow(period);
-
   const moveConds: SQL[] = [isNotNull(movements.categoryId)];
-  if (from) moveConds.push(sql`${movements.date} >= ${from}`);
-  if (to) moveConds.push(sql`${movements.date} < ${to}`);
+  if (window.from) moveConds.push(sql`${movements.date} >= ${window.from}`);
+  if (window.to) moveConds.push(sql`${movements.date} < ${window.to}`);
 
   const [cats, moveStats, ruleStats] = await Promise.all([
     db

@@ -11,6 +11,10 @@ import {
 } from "@/lib/db/queries/movements";
 import { listCategories } from "@/lib/db/queries/categories";
 import { listAccounts } from "@/lib/db/queries/financial-accounts";
+import {
+  periodFromSearchParams,
+  periodToWindow,
+} from "@/lib/period";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { deleteMovementAction } from "./actions";
 import { FilterBar } from "./filter-bar";
@@ -23,7 +27,10 @@ type SP = Promise<{
   categoryIds?: string | string[];
   accountId?: string;
   search?: string;
+  period?: string;
   month?: string;
+  from?: string;
+  to?: string;
 }>;
 
 export default async function MovimentiPage({ searchParams }: { searchParams: SP }) {
@@ -36,32 +43,33 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
     : [];
   const accountId = sp.accountId || undefined;
   const search = sp.search || undefined;
-  const month = sp.month || ""; // YYYY-MM
+  const period = periodFromSearchParams(sp);
+  const { from, to } = periodToWindow(period);
 
-  let from: Date | undefined;
-  let to: Date | undefined;
-  if (month && /^\d{4}-\d{2}$/.test(month)) {
-    const [y, m] = month.split("-").map(Number);
-    from = new Date(Date.UTC(y, m - 1, 1));
-    to = new Date(Date.UTC(y, m, 1));
-  }
+  // Vista dettaglio mese se è stato selezionato un mese specifico
+  const showMonthDetail = period.kind === "month";
+  // Vista tabella anche per range custom / trimestre / anno (no card mensili)
+  const showFlatTable =
+    period.kind === "range" ||
+    period.kind === "quarter" ||
+    period.kind === "ytd" ||
+    period.kind === "year";
 
-  // Querystring (senza month) da preservare nei link mese ↔ mese / mese → vista cards
   const extraQs = buildExtraQs({ type, categoryIds, accountId, search });
 
-  const showMonthDetail = !!month;
-
   // Caricamento condizionale per evitare query inutili
-  const [cats, accounts, uncategorizedCount, monthlyData, movs, primaryAccount] = await Promise.all([
-    listCategories(),
-    listAccounts({ activeOnly: false }),
-    countUncategorizedMovements(),
-    listMonthlyAggregates({ type, categoryIds, accountId, search }),
-    showMonthDetail
-      ? listMovements({ type, categoryIds, accountId, search, from, to })
-      : Promise.resolve([] as Awaited<ReturnType<typeof listMovements>>),
-    getPrimaryAccount(),
-  ]);
+  const wantsMovements = showMonthDetail || showFlatTable;
+  const [cats, accounts, uncategorizedCount, monthlyData, movs, primaryAccount] =
+    await Promise.all([
+      listCategories(),
+      listAccounts({ activeOnly: false }),
+      countUncategorizedMovements(),
+      listMonthlyAggregates({ type, categoryIds, accountId, search }),
+      wantsMovements
+        ? listMovements({ type, categoryIds, accountId, search, from, to })
+        : Promise.resolve([] as Awaited<ReturnType<typeof listMovements>>),
+      getPrimaryAccount(),
+    ]);
 
   const availableMonths = monthlyData.map((m) => m.month);
 
@@ -71,8 +79,8 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Movimenti</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {showMonthDetail
-              ? `${movs.length} ${movs.length === 1 ? "movimento" : "movimenti"} nel mese`
+            {wantsMovements
+              ? `${movs.length} ${movs.length === 1 ? "movimento" : "movimenti"} nel periodo`
               : `${monthlyData.length} ${monthlyData.length === 1 ? "mese" : "mesi"} con movimenti`}
           </p>
         </div>
@@ -106,23 +114,25 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
       <FilterBar
         categories={cats.map((c) => ({ id: c.id, name: c.name, type: c.type, color: c.color }))}
         accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
-        initial={{ type, accountId, categoryIds, search: search ?? "", month }}
+        initial={{ type, accountId, categoryIds, search: search ?? "", period }}
       />
 
-      {!showMonthDetail ? (
+      {!wantsMovements ? (
         <MonthlyCards data={monthlyData} extraQs={extraQs} />
       ) : (
         <>
-          <MonthNavigation
-            currentMonth={month}
-            availableMonths={availableMonths}
-            extraQs={extraQs}
-          />
+          {showMonthDetail && period.month && (
+            <MonthNavigation
+              currentMonth={period.month}
+              availableMonths={availableMonths}
+              extraQs={extraQs}
+            />
+          )}
 
           {movs.length === 0 ? (
             <EmptyState
-              title="Nessun movimento in questo mese"
-              description="Cambia mese dalla barra di navigazione o ripulisci i filtri."
+              title="Nessun movimento nel periodo selezionato"
+              description="Cambia periodo dalla barra dei filtri."
             />
           ) : (
             <div className="rounded-lg border border-border bg-card overflow-hidden">

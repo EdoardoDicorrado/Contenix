@@ -16,12 +16,19 @@ export type KpiData = {
 };
 
 /**
- * Riga di 4 KPI card con delta MoM (Month over Month).
+ * Riga di 4 KPI card con delta vs periodo precedente equivalente.
  */
-export function DashboardKpi({ data }: { data: KpiData }) {
+export function DashboardKpi({
+  data,
+  periodLabel,
+}: {
+  data: KpiData;
+  periodLabel: string;
+}) {
   const incomeDelta = percentDelta(data.current.income, data.previous.income);
   const expenseDelta = percentDelta(data.current.expense, data.previous.expense);
   const netDelta = percentDelta(data.current.net, data.previous.net);
+  const lower = periodLabel.toLowerCase();
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -33,7 +40,7 @@ export function DashboardKpi({ data }: { data: KpiData }) {
         subtitle="Somma di tutti i conti"
       />
       <KpiCard
-        label="Entrate del mese"
+        label={`Entrate ${lower}`}
         value={formatCurrency(data.current.income)}
         icon={<TrendingUp className="h-4 w-4" />}
         accent="success"
@@ -41,7 +48,7 @@ export function DashboardKpi({ data }: { data: KpiData }) {
         deltaIsGood="up"
       />
       <KpiCard
-        label="Uscite del mese"
+        label={`Uscite ${lower}`}
         value={formatCurrency(data.current.expense)}
         icon={<TrendingDown className="h-4 w-4" />}
         accent="danger"
@@ -49,7 +56,7 @@ export function DashboardKpi({ data }: { data: KpiData }) {
         deltaIsGood="down"
       />
       <KpiCard
-        label="Saldo netto del mese"
+        label={`Saldo netto ${lower}`}
         value={formatCurrency(data.current.net)}
         icon={
           data.current.net >= 0 ? (

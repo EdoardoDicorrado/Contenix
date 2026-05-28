@@ -1,35 +1,25 @@
 import { EmptyState } from "@/components/ui/empty-state";
+import { listCategoriesWithStats } from "@/lib/db/queries/categories";
 import {
-  listCategoriesWithStats,
-  type CategoryStatsPeriod,
-} from "@/lib/db/queries/categories";
+  describePeriod,
+  periodFromSearchParams,
+  periodToWindow,
+} from "@/lib/period";
 import { CategoriesView } from "./categories-view";
 import { NewCategoryButton } from "./new-category-button";
 
-type SP = Promise<{ period?: string }>;
-
-const VALID_PERIODS: CategoryStatsPeriod[] = [
-  "month",
-  "quarter",
-  "ytd",
-  "year",
-  "all",
-];
-
-const PERIOD_LABELS: Record<CategoryStatsPeriod, string> = {
-  month: "Mese corrente",
-  quarter: "Ultimi 3 mesi",
-  ytd: "Anno corrente",
-  year: "Ultimi 12 mesi",
-  all: "Sempre",
-};
+type SP = Promise<{
+  period?: string;
+  month?: string;
+  from?: string;
+  to?: string;
+}>;
 
 export default async function CategoriePage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const period: CategoryStatsPeriod = VALID_PERIODS.includes(sp.period as CategoryStatsPeriod)
-    ? (sp.period as CategoryStatsPeriod)
-    : "all";
-  const rows = await listCategoriesWithStats(period);
+  const period = periodFromSearchParams(sp);
+  const window = periodToWindow(period);
+  const rows = await listCategoriesWithStats(window);
   const income = rows.filter((r) => r.type === "income");
   const expense = rows.filter((r) => r.type === "expense");
 
@@ -40,7 +30,7 @@ export default async function CategoriePage({ searchParams }: { searchParams: SP
           <h2 className="text-2xl font-semibold tracking-tight">Categorie</h2>
           <p className="text-sm text-muted-foreground mt-1">
             {rows.length} categorie totali · {expense.length} uscite · {income.length} entrate.
-            Click su una card per vedere i movimenti di quella categoria.
+            Click su una card per vedere i movimenti.
           </p>
         </div>
         <NewCategoryButton />
@@ -64,8 +54,8 @@ export default async function CategoriePage({ searchParams }: { searchParams: SP
             rulesCount: c.rulesCount,
             lastMovementAt: c.lastMovementAt,
           }))}
-          currentPeriod={period}
-          periodLabel={PERIOD_LABELS[period]}
+          initialPeriod={period}
+          periodLabel={describePeriod(period)}
         />
       )}
     </div>

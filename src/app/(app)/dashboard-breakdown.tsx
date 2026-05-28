@@ -32,11 +32,13 @@ export function DashboardBreakdown({
   expense,
   topExpenses,
   topIncomes,
+  periodLabel = "Mese corrente",
 }: {
   income: number;
   expense: number;
   topExpenses: CategoryItem[];
   topIncomes: CategoryItem[];
+  periodLabel?: string;
 }) {
   const [metric, setMetric] = useState<MetricMode>("expense");
 
@@ -88,7 +90,7 @@ export function DashboardBreakdown({
       <div className="rounded-lg border border-border bg-background p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">Top categorie di spesa</h3>
-          <span className="text-[10px] text-muted-foreground">Mese corrente</span>
+          <span className="text-[10px] text-muted-foreground">{periodLabel}</span>
         </div>
         <CategoryBars items={topExpenses} accent="danger" />
         {topIncomes.length > 0 && (

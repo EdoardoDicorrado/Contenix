@@ -77,11 +77,24 @@ export type KpiOverview = {
   totalBalance: number; // saldo totale di tutti i conti
 };
 
-export async function getKpiOverview(): Promise<KpiOverview> {
+/**
+ * KPI per la finestra selezionata + finestra equivalente immediatamente
+ * precedente (per calcolare i delta). Default: mese corrente vs mese precedente.
+ */
+export async function getKpiOverview(window: { from?: Date; to?: Date } = {}): Promise<KpiOverview> {
   const now = new Date();
-  const curStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const curEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const prevStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  let curStart: Date;
+  let curEnd: Date;
+  if (window.from && window.to) {
+    curStart = window.from;
+    curEnd = window.to;
+  } else {
+    curStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    curEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  }
+  // Finestra precedente equivalente: stesso ampiezza, immediatamente prima
+  const lenMs = curEnd.getTime() - curStart.getTime();
+  const prevStart = new Date(curStart.getTime() - lenMs);
   const prevEnd = curStart;
 
   const [curRow, prevRow, balanceRow] = await Promise.all([
@@ -159,14 +172,16 @@ export type TopCategory = {
   count: number;
 };
 
-export async function getTopCategoriesForMonth(
-  year: number,
-  month: number,
+export async function getTopCategoriesInWindow(
+  window: { from?: Date; to?: Date },
   type: "income" | "expense",
   limit = 5,
 ): Promise<TopCategory[]> {
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 1));
+  const now = new Date();
+  const start =
+    window.from ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end =
+    window.to ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
 
   const rows = await db
     .select({
@@ -209,13 +224,15 @@ export type TopVendor = {
   count: number;
 };
 
-export async function getTopVendorsForMonth(
-  year: number,
-  month: number,
+export async function getTopVendorsInWindow(
+  window: { from?: Date; to?: Date },
   limit = 5,
 ): Promise<TopVendor[]> {
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 1));
+  const now = new Date();
+  const start =
+    window.from ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end =
+    window.to ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
 
   const rows = await db
     .select({
