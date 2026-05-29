@@ -370,22 +370,26 @@ function SingletonRow({
       </td>
       <td className="px-3 py-2">
         {done ? (
-          <span className="text-xs text-green-700 inline-flex items-center gap-1">
+          <span className="text-xs text-success inline-flex items-center gap-1">
             <CheckCircle2 className="h-3 w-3" /> Categorizzato
           </span>
-        ) : pending ? (
-          <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-            <Loader2 className="h-3 w-3 animate-spin" /> Salvo…
-          </span>
         ) : (
-          <CategoryCombo
-            categories={categories}
-            value={categoryId}
-            onChange={handleAssign}
-            filterType={row.type}
-            onCategoryCreated={onCategoryCreated}
-            placeholder="Categoria…"
-          />
+          <div className="inline-flex items-center gap-2 min-w-0">
+            <CategoryCombo
+              categories={categories}
+              value={categoryId}
+              onChange={handleAssign}
+              filterType={row.type}
+              onCategoryCreated={onCategoryCreated}
+              placeholder="Categoria…"
+            />
+            {pending && (
+              <Loader2
+                className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0"
+                aria-label="Salvataggio in corso"
+              />
+            )}
+          </div>
         )}
       </td>
     </tr>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeftRight } from "lucide-react";
 import { Input, Textarea } from "@/components/ui/input";
@@ -46,6 +46,12 @@ type Props = {
     transferToAccountId: string | null;
   };
   submitLabel: string;
+  /** Se passato, viene chiamato quando la action ritorna `ok: true` (variante
+   *  inline che non redireca). Usato dagli overlay per chiudersi. */
+  onSuccess?: () => void;
+  /** Mostra/nasconde il bottone "Annulla" (utile dentro overlay). */
+  cancelHref?: string;
+  onCancel?: () => void;
 };
 
 export function MovementForm({
@@ -55,11 +61,20 @@ export function MovementForm({
   accounts,
   defaultValues,
   submitLabel,
+  onSuccess,
+  cancelHref,
+  onCancel,
 }: Props) {
   const [state, formAction, pending] = useActionState<MovementFormState, FormData>(
     action,
     null,
   );
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (state?.ok && onSuccess) onSuccess();
+  }, [state, onSuccess]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const [categories, setCategories] = useState<CategoryOption[]>(initialCategories);
   const [categoryId, setCategoryId] = useState<string | null>(defaultValues?.categoryId ?? null);
@@ -300,11 +315,17 @@ export function MovementForm({
         <Button type="submit" disabled={pending}>
           {pending ? "Salvataggio…" : submitLabel}
         </Button>
-        <Link href="/movimenti">
-          <Button type="button" variant="ghost">
+        {onCancel ? (
+          <Button type="button" variant="ghost" onClick={onCancel}>
             Annulla
           </Button>
-        </Link>
+        ) : (
+          <Link href={cancelHref ?? "/movimenti"}>
+            <Button type="button" variant="ghost">
+              Annulla
+            </Button>
+          </Link>
+        )}
       </div>
     </form>
   );

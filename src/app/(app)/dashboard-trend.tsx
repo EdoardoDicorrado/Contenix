@@ -97,8 +97,20 @@ export function DashboardTrend({
     return combined;
   }, [history, forecast]);
 
-  const lastHistoryIdx = history.length - 1;
-  const lastHistoryMonth = history[lastHistoryIdx]?.month;
+  // "Oggi" è il mese corrente (vista mensile) o l'anno corrente (vista annuale),
+  // non l'ultimo punto della serie (che potrebbe essere dicembre).
+  const todayMarker = useMemo(() => {
+    const now = new Date();
+    if (currentScale === "year") {
+      return String(now.getFullYear());
+    }
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }, [currentScale]);
+  // Mostra la reference line solo se il marker è effettivamente presente nella serie
+  const hasTodayInData = useMemo(
+    () => data.some((d) => d.month === todayMarker),
+    [data, todayMarker],
+  );
 
   return (
     <div className="rounded-lg border border-border bg-background p-4 flex flex-col gap-3">
@@ -119,7 +131,7 @@ export function DashboardTrend({
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
             <LegendDot color="var(--success)" label="Entrate" />
             <LegendDot color="var(--danger)" label="Uscite" />
-            <LegendDot color="#3b82f6" label="Saldo netto" />
+            <LegendDot color="var(--foreground)" label="Saldo" />
           </div>
         </div>
       </div>
@@ -158,9 +170,9 @@ export function DashboardTrend({
                 return [formatCurrency(num), name];
               }}
             />
-            {lastHistoryMonth && (
+            {hasTodayInData && (
               <ReferenceLine
-                x={lastHistoryMonth}
+                x={todayMarker}
                 stroke="var(--border)"
                 strokeDasharray="4 4"
                 label={{
@@ -179,9 +191,9 @@ export function DashboardTrend({
               type="monotone"
               dataKey="net"
               name="Saldo"
-              stroke="#3b82f6"
+              stroke="var(--foreground)"
               strokeWidth={2}
-              dot={{ r: 2.5, fill: "#3b82f6" }}
+              dot={{ r: 2.5, fill: "var(--foreground)" }}
               activeDot={{ r: 4 }}
               connectNulls={false}
             />
@@ -192,7 +204,7 @@ export function DashboardTrend({
               dataKey="forecastNetHigh"
               name="—"
               stroke="none"
-              fill="#3b82f6"
+              fill="var(--foreground)"
               fillOpacity={0.08}
               legendType="none"
             />
@@ -209,10 +221,10 @@ export function DashboardTrend({
               type="monotone"
               dataKey="forecastNet"
               name="Previsione saldo"
-              stroke="#3b82f6"
+              stroke="var(--foreground)"
               strokeDasharray="5 5"
               strokeWidth={2}
-              dot={{ r: 2.5, fill: "#3b82f6" }}
+              dot={{ r: 2.5, fill: "var(--foreground)" }}
               connectNulls={false}
             />
             <Bar

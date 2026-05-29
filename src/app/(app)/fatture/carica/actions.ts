@@ -12,7 +12,7 @@ import type { FatturaPAExtraction } from "@/lib/fatturapa-parser";
 
 export type UploadFileResult = {
   fileName: string;
-  status: "created" | "stub" | "duplicate" | "error";
+  status: "created" | "stub" | "duplicate" | "error" | "skipped";
   invoiceId?: string;
   invoiceNumber?: string;
   counterparty?: string;
@@ -28,7 +28,27 @@ export type UploadResult = {
   totalStub: number;
   totalDuplicates: number;
   totalErrors: number;
+  totalSkipped: number;
 };
+
+/**
+ * Riconosce i file di accompagnamento SDI (metadati, notifiche, ricevute)
+ * che NON sono fatture. Filtrarli evita parsing inutile e errori a cascata.
+ *
+ * Pattern coperti:
+ *  - Nomi con "metadata" / "metadati" (es. *_metadati.xml)
+ *  - Prefisso SDI a 2 lettere seguito da "_": MT, NS, NE, RC, MC, NR, DT, AT, SE, EC, DF
+ *    (rispettivamente: MetadatiTrasmissione, NotificaScarto, NotificaEsito,
+ *     RicevutaConsegna, MancataConsegna, NotificaRifiuto, DecorrenzaTermini,
+ *     AttestazioneTrasmissione, ScartoEsito, EsitoCommittente, DataFile)
+ */
+function isSdiMetadataFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower.includes("metadata") || lower.includes("metadati")) return true;
+  const sdiPrefixes = ["mt_", "ns_", "ne_", "rc_", "mc_", "nr_", "dt_", "at_", "se_", "ec_", "df_"];
+  const bare = name.split("/").pop()?.toLowerCase() ?? lower;
+  return sdiPrefixes.some((p) => bare.startsWith(p));
+}
 
 type FileEntry = {
   name: string;
@@ -43,7 +63,7 @@ export async function uploadFilesAction(formData: FormData): Promise<UploadResul
     if (key === "files" && value instanceof File) files.push(value);
   }
   if (files.length === 0) {
-    return { ok: false, files: [], totalCreated: 0, totalStub: 0, totalDuplicates: 0, totalErrors: 0 };
+    return { ok: false, files: [], totalCreated: 0, totalStub: 0, totalDuplicates: 0, totalErrors: 0, totalSkipped: 0 };
   }
 
   const results: UploadFileResult[] = [];
@@ -59,8 +79,14 @@ export async function uploadFilesAction(formData: FormData): Promise<UploadResul
         for (const [path, entry] of Object.entries(zip.files)) {
           if (entry.dir) continue;
           if (path.startsWith("__MACOSX/")) continue;
+          const fileName = path.split("/").pop() ?? path;
+          // Skip dei file di accompagnamento SDI: non sono fatture
+          if (isSdiMetadataFile(fileName)) {
+            results.push({ fileName, status: "skipped" });
+            continue;
+          }
           const inner = await entry.async("nodebuffer");
-          flat.push({ name: path.split("/").pop() ?? path, data: inner });
+          flat.push({ name: fileName, data: inner });
         }
       } catch (e) {
         results.push({
@@ -69,6 +95,8 @@ export async function uploadFilesAction(formData: FormData): Promise<UploadResul
           error: e instanceof Error ? `ZIP non leggibile: ${e.message}` : "ZIP non leggibile",
         });
       }
+    } else if (isSdiMetadataFile(f.name)) {
+      results.push({ fileName: f.name, status: "skipped" });
     } else {
       flat.push({ name: f.name, data: buf });
     }
@@ -97,6 +125,7 @@ export async function uploadFilesAction(formData: FormData): Promise<UploadResul
     totalStub: results.filter((r) => r.status === "stub").length,
     totalDuplicates: results.filter((r) => r.status === "duplicate").length,
     totalErrors: results.filter((r) => r.status === "error").length,
+    totalSkipped: results.filter((r) => r.status === "skipped").length,
   };
 }
 

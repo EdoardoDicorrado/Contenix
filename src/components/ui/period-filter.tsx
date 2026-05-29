@@ -54,7 +54,9 @@ export function PeriodFilter({
   label = "Periodo",
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [calendarMode, setCalendarMode] = useState<"range" | "month" | null>(null);
+  const [calendarMode, setCalendarMode] = useState<
+    "range" | "month" | "year" | null
+  >(null);
   const ref = useRef<HTMLDivElement>(null);
   const rangeOnly = mode === "range-only";
   // In "range-only" l'attivazione segue solo il kind range; in "full" segue il default
@@ -146,6 +148,10 @@ export function PeriodFilter({
             setCalendarMode("month");
             setOpen(false);
           }}
+          onPickYear={() => {
+            setCalendarMode("year");
+            setOpen(false);
+          }}
           onPickRange={() => {
             setCalendarMode("range");
             setOpen(false);
@@ -174,6 +180,17 @@ export function PeriodFilter({
           onClose={() => setCalendarMode(null)}
         />
       )}
+
+      {calendarMode === "year" && (
+        <YearOverlay
+          value={value}
+          onApply={(p) => {
+            onChange(p);
+            setCalendarMode(null);
+          }}
+          onClose={() => setCalendarMode(null)}
+        />
+      )}
     </div>
   );
 }
@@ -182,39 +199,45 @@ function PeriodPopover({
   value,
   onPreset,
   onPickMonth,
+  onPickYear,
   onPickRange,
 }: {
   value: PeriodValue;
   onPreset: (v: PeriodValue) => void;
   onPickMonth: () => void;
+  onPickYear: () => void;
   onPickRange: () => void;
 }) {
   const presets: Array<{
     kind: PeriodKind;
     label: string;
     description?: string;
-    needsCalendar?: boolean;
   }> = [
     { kind: "all", label: "Sempre" },
     {
       kind: "month",
       label: "Mese specifico",
       description: "Apri il selettore mesi",
-      needsCalendar: true,
+    },
+    {
+      kind: "full-year",
+      label: "Anno specifico",
+      description: "Scegli un anno",
     },
     { kind: "quarter", label: "Ultimi 3 mesi" },
-    { kind: "ytd", label: "Anno corrente", description: "Da gennaio fino a oggi" },
+    { kind: "half-year", label: "Ultimi 6 mesi" },
     { kind: "year", label: "Ultimi 12 mesi" },
+    { kind: "ytd", label: "Anno corrente", description: "Da gennaio fino a oggi" },
     {
       kind: "range",
       label: "Personalizzato",
       description: "Apri il calendario",
-      needsCalendar: true,
     },
   ];
 
   function pick(kind: PeriodKind) {
     if (kind === "month") onPickMonth();
+    else if (kind === "full-year") onPickYear();
     else if (kind === "range") onPickRange();
     else onPreset({ kind });
   }
@@ -708,6 +731,111 @@ function MonthOverlay({
                 )}
               >
                 {label}
+                {isCurrent && (
+                  <div className="text-[9px] opacity-70 leading-none">oggi</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted"
+          >
+            Annulla
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            className="text-xs px-3 py-1.5 rounded bg-foreground text-background hover:opacity-90"
+          >
+            Applica
+          </button>
+        </div>
+      </div>
+    </OverlayModal>
+  );
+}
+
+// ===================================================================
+// OVERLAY: YEAR PICKER (decade in grid)
+// ===================================================================
+
+function YearOverlay({
+  value,
+  onApply,
+  onClose,
+}: {
+  value: PeriodValue;
+  onApply: (p: PeriodValue) => void;
+  onClose: () => void;
+}) {
+  const currentYearNow = new Date().getFullYear();
+  const initialYear =
+    value.kind === "full-year" && value.year ? value.year : currentYearNow;
+  const [selectedYear, setSelectedYear] = useState<number>(initialYear);
+  const [decadeStart, setDecadeStart] = useState<number>(
+    Math.floor(initialYear / 10) * 10,
+  );
+
+  function handleApply() {
+    onApply({ kind: "full-year", year: selectedYear });
+  }
+
+  return (
+    <OverlayModal
+      title="Seleziona anno"
+      icon={<Calendar className="h-4 w-4 text-foreground" />}
+      onClose={onClose}
+      size="sm"
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between border-b border-border pb-2">
+          <button
+            type="button"
+            onClick={() => setDecadeStart(decadeStart - 10)}
+            className="p-1.5 rounded hover:bg-muted text-foreground"
+            aria-label="Decade precedente"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="text-base font-semibold tabular-nums">
+            {decadeStart}–{decadeStart + 9}
+          </div>
+          <button
+            type="button"
+            onClick={() => setDecadeStart(decadeStart + 10)}
+            className="p-1.5 rounded hover:bg-muted text-foreground"
+            aria-label="Decade successiva"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-5 gap-2">
+          {Array.from({ length: 10 }, (_, i) => decadeStart + i).map((y) => {
+            const isSelected = y === selectedYear;
+            const isCurrent = y === currentYearNow;
+            const isFuture = y > currentYearNow;
+            return (
+              <button
+                key={y}
+                type="button"
+                onClick={() => setSelectedYear(y)}
+                className={cn(
+                  "h-12 rounded-md border text-sm font-medium tabular-nums transition-colors",
+                  isSelected
+                    ? "bg-foreground text-background border-foreground"
+                    : isCurrent
+                      ? "border-foreground/60 hover:bg-muted"
+                      : "border-border hover:bg-muted",
+                  isFuture && "opacity-50",
+                )}
+              >
+                {y}
                 {isCurrent && (
                   <div className="text-[9px] opacity-70 leading-none">oggi</div>
                 )}

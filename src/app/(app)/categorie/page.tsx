@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/ui/empty-state";
 import { listCategoriesWithStats } from "@/lib/db/queries/categories";
+import { getMovementsStats } from "@/lib/db/queries/movements";
 import {
   describePeriod,
   periodFromSearchParams,
@@ -7,6 +8,7 @@ import {
 } from "@/lib/period";
 import { CategoriesView } from "./categories-view";
 import { NewCategoryButton } from "./new-category-button";
+import { SyncCategoriesButton } from "../sincronizza/sync-buttons";
 
 type SP = Promise<{
   period?: string;
@@ -19,7 +21,10 @@ export default async function CategoriePage({ searchParams }: { searchParams: SP
   const sp = await searchParams;
   const period = periodFromSearchParams(sp);
   const window = periodToWindow(period);
-  const rows = await listCategoriesWithStats(window);
+  const [rows, movStats] = await Promise.all([
+    listCategoriesWithStats(window),
+    getMovementsStats(),
+  ]);
   const income = rows.filter((r) => r.type === "income");
   const expense = rows.filter((r) => r.type === "expense");
 
@@ -33,7 +38,10 @@ export default async function CategoriePage({ searchParams }: { searchParams: SP
             Click su una card per vedere i movimenti.
           </p>
         </div>
-        <NewCategoryButton />
+        <div className="flex items-center gap-2">
+          <SyncCategoriesButton stats={movStats} />
+          <NewCategoryButton />
+        </div>
       </div>
 
       {rows.length === 0 ? (

@@ -184,6 +184,30 @@ export async function updateMovementAction(
   redirect("/movimenti");
 }
 
+/**
+ * Variante inline di updateMovementAction: NON fa redirect, ritorna {ok}
+ * così l'overlay client può chiudersi e fare router.refresh() da solo.
+ */
+export async function updateMovementInlineAction(
+  id: string,
+  _prev: MovementFormState,
+  formData: FormData,
+): Promise<MovementFormState> {
+  const parsed = parseFormData(formData);
+  if (!parsed.success) {
+    return { ok: false, errors: flattenZodErrors(parsed.error) };
+  }
+  const movement = await ensureAccount(toMovementInput(parsed.data));
+  await updateMovement(id, movement);
+  await maybeCreateRule(parsed.data, movement);
+  await maybeCreateTransferRule(parsed.data, movement);
+
+  revalidatePath("/movimenti");
+  revalidatePath("/conti");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 export async function deleteMovementAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;

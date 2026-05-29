@@ -37,7 +37,14 @@ const nav: NavItem[] = [
       { label: "Da rivedere", href: "/movimenti/da-rivedere", icon: AlertCircle },
     ],
   },
-  { label: "Fatture", href: "/fatture", icon: FileText },
+  {
+    label: "Fatture",
+    href: "/fatture",
+    icon: FileText,
+    children: [
+      { label: "Da rivedere", href: "/fatture/da-rivedere", icon: AlertCircle },
+    ],
+  },
   { label: "Dipendenti", href: "/dipendenti", icon: Users },
   { label: "Categorie", href: "/categorie", icon: Tags },
   { label: "Regole", href: "/regole", icon: ListFilter },
@@ -47,6 +54,7 @@ const nav: NavItem[] = [
 
 const secondary = [
   { label: "Importa movimenti", href: "/importa", icon: Upload },
+  { label: "Importa fatture", href: "/fatture/carica", icon: FileText },
   { label: "Importa storico", href: "/importa-storico", icon: History },
   { label: "Esportazioni", href: "/esportazioni", icon: Download },
   { label: "Impostazioni", href: "/impostazioni", icon: Settings },

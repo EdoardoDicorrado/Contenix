@@ -7,7 +7,47 @@ import {
   createInvoice,
   updateInvoice,
   deleteInvoice,
+  type InvoiceInput,
 } from "@/lib/db/queries/invoices";
+import { uploadInvoiceFile } from "@/lib/blob";
+
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MB
+const ALLOWED_MIME = new Set([
+  "application/pdf",
+  "application/xml",
+  "text/xml",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+async function extractUpload(
+  formData: FormData,
+): Promise<
+  | { ok: true; file: null }
+  | { ok: true; file: { url: string; name: string; mime: string; size: number } }
+  | { ok: false; error: string }
+> {
+  const f = formData.get("file");
+  if (!(f instanceof File) || f.size === 0) return { ok: true, file: null };
+  if (f.size > MAX_UPLOAD_BYTES) {
+    return { ok: false, error: "File troppo grande (max 20 MB)" };
+  }
+  const mime = f.type || "application/octet-stream";
+  if (ALLOWED_MIME.size > 0 && !ALLOWED_MIME.has(mime)) {
+    return { ok: false, error: "Formato non supportato (PDF, XML, JPG, PNG, WEBP)" };
+  }
+  const buffer = Buffer.from(await f.arrayBuffer());
+  const blob = await uploadInvoiceFile({
+    fileName: f.name,
+    contentType: mime,
+    data: buffer,
+  });
+  return {
+    ok: true,
+    file: { url: blob.url, name: f.name, mime, size: blob.size },
+  };
+}
 
 const InvoiceSchema = z.object({
   number: z.string().min(1, "Numero obbligatorio").max(50),
@@ -70,7 +110,7 @@ function parse(formData: FormData) {
   return InvoiceSchema.safeParse(raw);
 }
 
-function toInput(data: z.infer<typeof InvoiceSchema>) {
+function toInput(data: z.infer<typeof InvoiceSchema>): InvoiceInput {
   return {
     number: data.number,
     type: data.type,
@@ -95,7 +135,19 @@ export async function createInvoiceAction(
 ): Promise<InvoiceFormState> {
   const parsed = parse(formData);
   if (!parsed.success) return { ok: false, errors: flatten(parsed.error) };
-  await createInvoice(toInput(parsed.data));
+
+  const upload = await extractUpload(formData);
+  if (!upload.ok) return { ok: false, errors: { file: upload.error } };
+
+  const input = toInput(parsed.data);
+  if (upload.file) {
+    input.fileUrl = upload.file.url;
+    input.fileName = upload.file.name;
+    input.fileMime = upload.file.mime;
+    input.fileSize = upload.file.size;
+  }
+
+  await createInvoice(input);
   revalidatePath("/fatture");
   revalidatePath("/");
   redirect("/fatture");
@@ -108,7 +160,19 @@ export async function updateInvoiceAction(
 ): Promise<InvoiceFormState> {
   const parsed = parse(formData);
   if (!parsed.success) return { ok: false, errors: flatten(parsed.error) };
-  await updateInvoice(id, toInput(parsed.data));
+
+  const upload = await extractUpload(formData);
+  if (!upload.ok) return { ok: false, errors: { file: upload.error } };
+
+  const input = toInput(parsed.data);
+  if (upload.file) {
+    input.fileUrl = upload.file.url;
+    input.fileName = upload.file.name;
+    input.fileMime = upload.file.mime;
+    input.fileSize = upload.file.size;
+  }
+
+  await updateInvoice(id, input);
   revalidatePath("/fatture");
   revalidatePath(`/fatture/${id}`);
   revalidatePath("/");

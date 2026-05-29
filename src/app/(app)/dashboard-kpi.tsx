@@ -91,19 +91,20 @@ function KpiCard({
   deltaIsGood?: "up" | "down";
   subtitle?: string;
 }) {
-  const iconColor = {
+  // Schema "data wins": l'icona resta neutra, solo il numero porta il colore.
+  const valueColor = {
     success: "text-success",
     danger: "text-danger",
-    neutral: "text-muted-foreground",
+    neutral: "text-foreground",
   }[accent];
 
   return (
     <div className="rounded-lg border border-border bg-background p-4 flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span className={iconColor}>{icon}</span>
+        <span className="text-muted-foreground">{icon}</span>
       </div>
-      <div className={`text-2xl font-semibold tabular-nums ${iconColor}`}>{value}</div>
+      <div className={`text-2xl font-semibold tabular-nums ${valueColor}`}>{value}</div>
       <div className="text-[11px] text-muted-foreground min-h-[14px]">
         {delta != null && deltaIsGood ? (
           <DeltaBadge value={delta} isGoodDir={deltaIsGood} />

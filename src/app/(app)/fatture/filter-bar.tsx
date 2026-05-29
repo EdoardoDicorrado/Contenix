@@ -7,6 +7,8 @@ import {
   FilterButton,
   type FilterOption,
 } from "@/components/ui/filter-button";
+import { PeriodFilter } from "@/components/ui/period-filter";
+import { periodToQueryString, type PeriodValue } from "@/lib/period";
 
 type TypeFilter = "" | "purchase" | "sale";
 type StatusFilter = "" | "pending" | "partial" | "paid" | "overdue" | "cancelled";
@@ -33,6 +35,7 @@ export function FattureFilterBar({
     type: TypeFilter;
     status: StatusFilter;
     search: string;
+    period: PeriodValue;
   };
 }) {
   const router = useRouter();
@@ -57,12 +60,41 @@ export function FattureFilterBar({
     router.push(buildUrl(patch));
   }
 
+  function setPeriod(p: PeriodValue) {
+    // Reset di tutti i param period e applica i nuovi
+    const cleared: Record<string, string | undefined> = {
+      period: undefined,
+      month: undefined,
+      from: undefined,
+      to: undefined,
+      year: undefined,
+      quarter: undefined,
+    };
+    if (p.kind !== "all") {
+      cleared.period = p.kind;
+      if (p.kind === "month") cleared.month = p.month;
+      if (p.kind === "range") {
+        cleared.from = p.from;
+        cleared.to = p.to;
+      }
+      if (p.year != null) cleared.year = String(p.year);
+      if (p.quarter != null) cleared.quarter = String(p.quarter);
+    }
+    pushPatch(cleared);
+    // periodToQueryString è qui solo per coerenza (non usata direttamente)
+    void periodToQueryString(p);
+  }
+
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
     pushPatch({ search: search.trim() || undefined });
   }
 
-  const hasAnyFilter = !!initial.type || !!initial.status || !!initial.search;
+  const hasAnyFilter =
+    !!initial.type ||
+    !!initial.status ||
+    !!initial.search ||
+    initial.period.kind !== "all";
 
   return (
     <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-border bg-background">
@@ -80,6 +112,8 @@ export function FattureFilterBar({
           />
         </div>
       </form>
+
+      <PeriodFilter value={initial.period} onChange={setPeriod} />
 
       <FilterButton
         label="Tipo"

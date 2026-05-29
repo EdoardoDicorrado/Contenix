@@ -1,21 +1,24 @@
 import Link from "next/link";
-import { ArrowLeftRight, Tag, Trash2, Wand2 } from "lucide-react";
+import { ArrowLeftRight, Tag, Trash2 } from "lucide-react";
 import { listRules } from "@/lib/db/queries/categorization-rules";
 import { listTransferRules } from "@/lib/db/queries/transfer-rules";
 import { listCategories } from "@/lib/db/queries/categories";
 import { listAccounts } from "@/lib/db/queries/financial-accounts";
+import { getMovementsStats } from "@/lib/db/queries/movements";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { deleteTransferRuleAction } from "./actions";
 import { NewRuleButton } from "./new-rule-form";
 import { RulesByCategory } from "./rules-by-category";
+import { SyncCategoriesButton } from "../sincronizza/sync-buttons";
 
 export default async function RegolePage() {
-  const [categoryRules, transferRules, categories, accounts] = await Promise.all([
+  const [categoryRules, transferRules, categories, accounts, movementsStats] = await Promise.all([
     listRules(),
     listTransferRules(),
     listCategories(),
     listAccounts({ activeOnly: false }),
+    getMovementsStats(),
   ]);
 
   return (
@@ -28,13 +31,7 @@ export default async function RegolePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href="/sincronizza"
-            className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md text-sm font-medium bg-foreground text-background hover:opacity-90 transition-colors"
-          >
-            <Wand2 className="h-4 w-4" />
-            Sincronizza
-          </Link>
+          <SyncCategoriesButton stats={movementsStats} />
           <NewRuleButton
             categories={categories.map((c) => ({ id: c.id, name: c.name, type: c.type }))}
             accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}

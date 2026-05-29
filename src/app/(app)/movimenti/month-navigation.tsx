@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Grid3x3 } from "lucide-react";
+import { shiftMonth } from "@/lib/period";
 
 const MONTH_LABELS = [
   "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
@@ -7,23 +8,20 @@ const MONTH_LABELS = [
 ];
 
 /**
- * Barra di navigazione fra mesi disponibili (quelli che hanno almeno un
- * movimento). Mostra mese precedente / corrente / successivo, e un bottone
- * per tornare alla vista a card.
+ * Barra di navigazione tra mesi. Le frecce avanti/indietro sono SEMPRE
+ * cliccabili e portano al mese precedente / successivo cronologico, anche
+ * se è vuoto (vedi empty state). Niente dipendenza dalla lista dei mesi
+ * popolati così l'utente non resta bloccato.
  */
 export function MonthNavigation({
   currentMonth, // YYYY-MM
-  availableMonths, // YYYY-MM[], sortati desc
   extraQs,
 }: {
   currentMonth: string;
-  availableMonths: string[];
   extraQs: string;
 }) {
-  const idx = availableMonths.indexOf(currentMonth);
-  // Lista è DESC: idx-1 è "più recente" (next), idx+1 è "più vecchio" (prev)
-  const newer = idx > 0 ? availableMonths[idx - 1] : null;
-  const older = idx >= 0 && idx < availableMonths.length - 1 ? availableMonths[idx + 1] : null;
+  const prev = shiftMonth(currentMonth, -1);
+  const next = shiftMonth(currentMonth, 1);
 
   const [y, m] = currentMonth.split("-").map(Number);
   const label = m && y ? `${MONTH_LABELS[m - 1]} ${y}` : currentMonth;
@@ -43,41 +41,29 @@ export function MonthNavigation({
       </Link>
 
       <div className="flex items-center gap-2">
-        {older ? (
-          <Link
-            href={urlFor(older)}
-            className="inline-flex items-center gap-1 h-8 px-2 rounded-md border border-input bg-background hover:bg-muted text-xs"
-            title={`Vai a ${labelFor(older)}`}
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            {labelFor(older)}
-          </Link>
-        ) : (
-          <span className="inline-flex items-center gap-1 h-8 px-2 rounded-md border border-input text-xs text-muted-foreground opacity-50">
-            <ChevronLeft className="h-3.5 w-3.5" />
-            Più vecchio
-          </span>
-        )}
+        <Link
+          href={urlFor(prev)}
+          className="inline-flex items-center gap-1 h-8 px-2 rounded-md border border-input bg-background hover:bg-muted text-xs"
+          title={`Vai a ${labelFor(prev)}`}
+          aria-label={`Mese precedente: ${labelFor(prev)}`}
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          {labelFor(prev)}
+        </Link>
 
         <div className="h-8 px-3 rounded-md bg-muted text-sm font-medium inline-flex items-center">
           {label}
         </div>
 
-        {newer ? (
-          <Link
-            href={urlFor(newer)}
-            className="inline-flex items-center gap-1 h-8 px-2 rounded-md border border-input bg-background hover:bg-muted text-xs"
-            title={`Vai a ${labelFor(newer)}`}
-          >
-            {labelFor(newer)}
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
-        ) : (
-          <span className="inline-flex items-center gap-1 h-8 px-2 rounded-md border border-input text-xs text-muted-foreground opacity-50">
-            Più recente
-            <ChevronRight className="h-3.5 w-3.5" />
-          </span>
-        )}
+        <Link
+          href={urlFor(next)}
+          className="inline-flex items-center gap-1 h-8 px-2 rounded-md border border-input bg-background hover:bg-muted text-xs"
+          title={`Vai a ${labelFor(next)}`}
+          aria-label={`Mese successivo: ${labelFor(next)}`}
+        >
+          {labelFor(next)}
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
     </div>
   );

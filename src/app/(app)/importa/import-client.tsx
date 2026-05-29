@@ -384,13 +384,15 @@ export function ImportClient({
                 <tbody className="divide-y divide-border">
                   {transformed.valid.slice(0, 10).map((r, i) => (
                     <tr key={i}>
-                      <td className="px-4 py-2 tabular-nums text-muted-foreground">
+                      <td className="px-4 py-2 tabular-nums text-muted-foreground align-top whitespace-nowrap">
                         {formatDate(r.date)}
                       </td>
-                      <td className="px-4 py-2 truncate max-w-md">{r.description}</td>
+                      <td className="px-4 py-2 align-top whitespace-pre-wrap break-words">
+                        {r.description}
+                      </td>
                       <td
                         className={
-                          "px-4 py-2 text-right tabular-nums font-medium " +
+                          "px-4 py-2 text-right tabular-nums font-medium align-top whitespace-nowrap " +
                           (r.type === "income" ? "text-success" : "text-danger")
                         }
                       >

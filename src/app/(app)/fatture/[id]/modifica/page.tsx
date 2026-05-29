@@ -47,6 +47,12 @@ export default async function ModificaFatturaPage({
           isCreditNote: invoice.isCreditNote,
           relatedInvoiceId: invoice.relatedInvoiceId,
         }}
+        existingFile={{
+          fileName: invoice.fileName,
+          fileUrl: invoice.fileUrl
+            ? `/api/fatture/${id}/file`
+            : null,
+        }}
         submitLabel="Salva modifiche"
         cancelHref={`/fatture/${id}`}
       />

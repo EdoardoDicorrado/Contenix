@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -20,8 +20,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import { uploadFilesAction, type UploadResult } from "./actions";
+import { appendUploadRun } from "@/lib/upload-history";
 
 const LS_OUR_VAT = "wpaper.ourVat";
+const DEFAULT_OUR_VAT = "IT01827680339"; // WPaper
 
 export function UploadClient() {
   const router = useRouter();
@@ -29,12 +31,35 @@ export function UploadClient() {
   const [pending, startTransition] = useTransition();
 
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
-  const [ourVat, setOurVat] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem(LS_OUR_VAT) ?? "";
-  });
+  // SSR-safe: parte sempre con il default WPaper. Se l'utente ha salvato un
+  // valore diverso (es. test con altra P.IVA), lo ripristiniamo lato client.
+  const [ourVat, setOurVat] = useState<string>(DEFAULT_OUR_VAT);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Contatore secondi trascorsi durante l'upload: feedback "vivo" all'utente
+  // quando un batch di centinaia di fatture richiede minuti.
+  const [elapsed, setElapsed] = useState(0);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LS_OUR_VAT);
+      if (saved && saved !== DEFAULT_OUR_VAT) setOurVat(saved);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!pending) {
+      setElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [pending]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function addFiles(list: FileList | File[]) {
     const arr = Array.from(list);
@@ -65,14 +90,21 @@ export function UploadClient() {
     if (pickedFiles.length === 0) return;
     setError(null);
 
+    // P.IVA WPaper sempre presente. Se l'utente l'ha svuotata per errore,
+    // ripristiniamo silenziosamente il default.
+    const effectiveVat = ourVat.trim() || DEFAULT_OUR_VAT;
+    if (effectiveVat !== ourVat) setOurVat(effectiveVat);
+
     const fd = new FormData();
-    if (ourVat) fd.append("ourVat", ourVat);
+    fd.append("ourVat", effectiveVat);
     for (const f of pickedFiles) fd.append("files", f, f.name);
 
     startTransition(async () => {
       try {
         const res = await uploadFilesAction(fd);
         setResult(res);
+        // Storico locale per "cosa è entrato e cosa no" tra una sessione e l'altra
+        if (res.ok) appendUploadRun(res);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Errore upload");
       }
@@ -86,16 +118,21 @@ export function UploadClient() {
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-lg border border-border bg-card px-4 py-3">
-        <Label>P.IVA della tua azienda (per distinguere acquisti / vendite)</Label>
+        <Label>P.IVA WPaper (per distinguere acquisti / vendite)</Label>
         <div className="flex items-center gap-2">
           <Input
             value={ourVat}
             onChange={(e) => saveOurVat(e.target.value.toUpperCase())}
-            placeholder="IT12345678901"
+            placeholder={DEFAULT_OUR_VAT}
             maxLength={20}
+            required
             className="font-mono"
           />
-          {ourVat && <Badge tone="primary">Salvata</Badge>}
+          {ourVat === DEFAULT_OUR_VAT ? (
+            <Badge tone="success">WPaper</Badge>
+          ) : ourVat ? (
+            <Badge tone="primary">Custom</Badge>
+          ) : null}
         </div>
         <p className="text-[11px] text-muted-foreground mt-1.5">
           Usata solo per XML FatturaPA. Salvata nel browser.
@@ -133,7 +170,7 @@ export function UploadClient() {
             {pending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Upload in corso…
+                Upload in corso… {elapsed > 0 ? `(${formatElapsed(elapsed)})` : ""}
               </>
             ) : (
               <>
@@ -241,7 +278,8 @@ function ResultPanel({
         <h3 className="text-base font-semibold mt-3">Upload completato</h3>
         <p className="text-sm text-muted-foreground mt-1">
           {result.totalCreated} XML letti · {result.totalStub} PDF archiviati ·{" "}
-          {result.totalDuplicates} duplicati · {result.totalErrors} errori
+          {result.totalDuplicates} duplicati · {result.totalSkipped} metadati SDI saltati ·{" "}
+          {result.totalErrors} errori
         </p>
         <div className="flex items-center gap-2 mt-5">
           <Button onClick={onGoFatture}>Vai alle fatture</Button>
@@ -291,7 +329,7 @@ function ResultPanel({
   );
 }
 
-function StatusBadge({ status }: { status: "created" | "stub" | "duplicate" | "error" }) {
+function StatusBadge({ status }: { status: "created" | "stub" | "duplicate" | "error" | "skipped" }) {
   if (status === "created") return <Badge tone="success">Letto XML</Badge>;
   if (status === "stub")
     return (
@@ -300,6 +338,7 @@ function StatusBadge({ status }: { status: "created" | "stub" | "duplicate" | "e
       </Badge>
     );
   if (status === "duplicate") return <Badge tone="neutral">Duplicato</Badge>;
+  if (status === "skipped") return <Badge tone="neutral">Metadato SDI</Badge>;
   return <Badge tone="danger">Errore</Badge>;
 }
 
@@ -307,4 +346,11 @@ function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
   return `${(b / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function formatElapsed(s: number): string {
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}m ${r}s`;
 }

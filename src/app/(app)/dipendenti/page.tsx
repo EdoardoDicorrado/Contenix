@@ -5,11 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { listEmployeesWithStats } from "@/lib/db/queries/employees";
+import { getEmployeeAllocationStats } from "@/lib/db/queries/apply-employee-allocation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { deleteEmployeeAction } from "./actions";
+import { SyncEmployeesButton } from "../sincronizza/sync-buttons";
 
 export default async function DipendentiPage() {
-  const rows = await listEmployeesWithStats();
+  const [rows, empStats] = await Promise.all([
+    listEmployeesWithStats(),
+    getEmployeeAllocationStats(),
+  ]);
 
   const totalMonthlyCost = rows
     .filter((r) => r.active)
@@ -25,7 +30,10 @@ export default async function DipendentiPage() {
             Costo mensile attivi: <span className="text-danger font-medium">{formatCurrency(totalMonthlyCost)}</span>
           </p>
         </div>
-        <NewEmployeeButton />
+        <div className="flex items-center gap-2">
+          <SyncEmployeesButton stats={empStats} />
+          <NewEmployeeButton />
+        </div>
       </div>
 
       {rows.length === 0 ? (

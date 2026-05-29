@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/utils";
+import { appendSyncRun } from "@/lib/sync-history";
 import { applyRulesAction, type ApplyRulesActionResult } from "../regole/actions";
 
 export type MovementsStats = {
@@ -72,6 +73,8 @@ export function SyncStatusCard({ stats }: { stats: MovementsStats }) {
         } catch {
           // localStorage quota / disabled
         }
+        // Storico: append del run per la pagina /sincronizza
+        appendSyncRun("categories", res.result);
         router.refresh();
       }
     });
@@ -259,19 +262,23 @@ function StatBox({
   value: number;
   accent: "green" | "blue" | "amber" | "neutral";
 }) {
-  const accentClass = {
-    green: "text-green-700",
-    blue: "text-blue-700",
-    amber: "text-amber-700",
-    neutral: "text-muted-foreground",
-  }[accent];
+  // Schema "data wins": l'accento colora SOLO il numero (verde positivo,
+  // rosso negativo, neutro altrimenti). L'icona e la label restano neutrali.
+  const valueClass =
+    accent === "green" && value > 0
+      ? "text-success"
+      : accent === "amber" && value > 0
+        ? "text-danger"
+        : "text-foreground";
   return (
     <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-      <div className={`flex items-center gap-1.5 text-[11px] ${accentClass}`}>
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         {icon}
         {label}
       </div>
-      <div className="text-2xl font-semibold tabular-nums mt-0.5">{value}</div>
+      <div className={`text-2xl font-semibold tabular-nums mt-0.5 ${valueClass}`}>
+        {value}
+      </div>
     </div>
   );
 }

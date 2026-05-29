@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef, useState } from "react";
 import Link from "next/link";
+import { FileText, Paperclip, X as XIcon } from "lucide-react";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -29,19 +30,35 @@ type Props = {
     isCreditNote?: boolean;
     relatedInvoiceId?: string | null;
   };
+  existingFile?: {
+    fileName: string | null;
+    fileUrl: string | null;
+  } | null;
   submitLabel: string;
   cancelHref: string;
 };
 
-export function InvoiceForm({ action, defaultValues, submitLabel, cancelHref }: Props) {
+export function InvoiceForm({
+  action,
+  defaultValues,
+  existingFile,
+  submitLabel,
+  cancelHref,
+}: Props) {
   const [state, formAction, pending] = useActionState<InvoiceFormState, FormData>(
     action,
     null,
   );
   const err = (k: string) => (state && !state.ok ? state.errors?.[k] : undefined);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
 
   return (
-    <form action={formAction} className="flex flex-col gap-5 max-w-2xl">
+    <form
+      action={formAction}
+      encType="multipart/form-data"
+      className="flex flex-col gap-5 max-w-2xl"
+    >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Tipo" error={err("type")}>
           <Select name="type" defaultValue={defaultValues?.type ?? "purchase"} required>
@@ -171,6 +188,78 @@ export function InvoiceForm({ action, defaultValues, submitLabel, cancelHref }: 
             rows={3}
           />
         </Field>
+
+        <Field
+          label="Allegato"
+          error={err("file")}
+          hint="PDF, XML o immagine (max 20 MB)"
+          className="sm:col-span-2"
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            name="file"
+            accept=".pdf,.xml,image/jpeg,image/png,image/webp,application/pdf,application/xml,text/xml"
+            onChange={(e) => setPickedFile(e.target.files?.[0] ?? null)}
+            className="hidden"
+          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="h-4 w-4" />
+              {pickedFile
+                ? "Cambia file"
+                : existingFile?.fileName
+                  ? "Sostituisci file"
+                  : "Allega file"}
+            </Button>
+
+            {pickedFile ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-foreground bg-muted border border-border rounded-md px-2 py-1">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-medium">{pickedFile.name}</span>
+                <span className="text-muted-foreground">
+                  · {formatBytes(pickedFile.size)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickedFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                  className="ml-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Rimuovi file"
+                >
+                  <XIcon className="h-3 w-3" />
+                </button>
+              </span>
+            ) : existingFile?.fileName ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <FileText className="h-3.5 w-3.5" />
+                Attuale:{" "}
+                {existingFile.fileUrl ? (
+                  <a
+                    href={existingFile.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-foreground hover:underline"
+                  >
+                    {existingFile.fileName}
+                  </a>
+                ) : (
+                  <span className="text-foreground">{existingFile.fileName}</span>
+                )}
+              </span>
+            ) : (
+              <span className="text-[11px] text-muted-foreground">
+                Nessun allegato
+              </span>
+            )}
+          </div>
+        </Field>
       </div>
 
       <div className="flex items-center gap-3 pt-2">
@@ -210,4 +299,10 @@ function Field({
       {error && <p className="text-xs text-danger mt-1">{error}</p>}
     </div>
   );
+}
+
+function formatBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1024 / 1024).toFixed(2)} MB`;
 }

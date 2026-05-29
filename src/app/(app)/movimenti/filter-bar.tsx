@@ -130,6 +130,12 @@ export function FilterBar({
 
       <PeriodFilter value={initial.period} onChange={setPeriod} />
 
+      <CategoryMultiFilter
+        categories={categories}
+        selectedIds={initial.categoryIds}
+        onChange={(ids) => pushPatch({ categoryIds: ids.length > 0 ? ids : undefined })}
+      />
+
       <FilterButton
         label="Tipo"
         options={typeOptions}
@@ -144,12 +150,6 @@ export function FilterBar({
         options={accountOptions}
         value={initial.accountId ?? ""}
         onChange={(v) => pushPatch({ accountId: v || undefined })}
-      />
-
-      <CategoryMultiFilter
-        categories={categories}
-        selectedIds={initial.categoryIds}
-        onChange={(ids) => pushPatch({ categoryIds: ids.length > 0 ? ids : undefined })}
       />
 
       {hasAnyFilter && (
@@ -180,29 +180,19 @@ function CategoryMultiFilter({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
+  // Selezione "staged" che NON viene applicata finché non si conferma
+  const [staged, setStaged] = useState<string[]>(selectedIds);
+
   const isActive = selectedIds.length > 0;
 
-  // Soglia: ≤4 categorie → popover compatto, >4 → overlay full
-  const useOverlay = categories.length > 4;
+  // Quando si apre il modal, si sincronizza con i filtri attivi
+  function openModal() {
+    setStaged(selectedIds);
+    setSearch("");
+    setOpen(true);
+  }
 
-  useEffect(() => {
-    if (useOverlay || !open) return;
-    function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onEsc);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onEsc);
-    };
-  }, [open, useOverlay]);
-
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const stagedSet = useMemo(() => new Set(staged), [staged]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -219,67 +209,37 @@ function CategoryMultiFilter({
       : `${selectedIds.length} categorie`
     : null;
 
-  function toggle(id: string) {
-    const next = selectedSet.has(id)
-      ? selectedIds.filter((x) => x !== id)
-      : [...selectedIds, id];
-    onChange(next);
+  function toggleStaged(id: string) {
+    setStaged((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
   }
 
-  function clear(e: React.MouseEvent) {
+  function selectAll(items: CategoryOpt[]) {
+    const ids = items.map((c) => c.id);
+    setStaged((prev) => Array.from(new Set([...prev, ...ids])));
+  }
+
+  function deselectAll(items: CategoryOpt[]) {
+    const ids = new Set(items.map((c) => c.id));
+    setStaged((prev) => prev.filter((id) => !ids.has(id)));
+  }
+
+  function applyStaged() {
+    onChange(staged);
+    setOpen(false);
+  }
+
+  function clearFromChip(e: React.MouseEvent) {
     e.stopPropagation();
     onChange([]);
   }
 
-  const content = (
-    <>
-      <input
-        autoFocus
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Cerca categoria…"
-        className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm mb-2"
-      />
-      <div
-        className={cn(
-          "overflow-auto",
-          useOverlay ? "max-h-96" : "max-h-72",
-        )}
-      >
-        {incomes.length > 0 && (
-          <Group label="Entrate" items={incomes} selected={selectedSet} onToggle={toggle} />
-        )}
-        {expenses.length > 0 && (
-          <Group label="Uscite" items={expenses} selected={selectedSet} onToggle={toggle} />
-        )}
-        {filtered.length === 0 && (
-          <div className="text-xs text-muted-foreground p-2 text-center">
-            Nessuna categoria
-          </div>
-        )}
-      </div>
-      {selectedIds.length > 0 && (
-        <div className="border-t border-border mt-2 pt-2 flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">
-            {selectedIds.length} selezionate
-          </span>
-          <button
-            type="button"
-            onClick={() => onChange([])}
-            className="text-foreground hover:underline"
-          >
-            Deseleziona tutte
-          </button>
-        </div>
-      )}
-    </>
-  );
-
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={openModal}
         className={cn(
           "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
           isActive
@@ -295,11 +255,11 @@ function CategoryMultiFilter({
           <span
             role="button"
             tabIndex={0}
-            onClick={clear}
+            onClick={clearFromChip}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                clear(e as unknown as React.MouseEvent);
+                clearFromChip(e as unknown as React.MouseEvent);
               }
             }}
             className="ml-0.5 -mr-1 p-0.5 rounded hover:bg-background/20 cursor-pointer"
@@ -311,22 +271,162 @@ function CategoryMultiFilter({
         {!isActive && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
       </button>
 
-      {open && !useOverlay && (
-        <div className="absolute z-40 left-0 mt-1 w-64 rounded-md border border-border bg-background shadow-lg p-2">
-          {content}
-        </div>
-      )}
-
-      {open && useOverlay && (
+      {open && (
         <OverlayModal
           title="Filtra per categoria"
           icon={<Tag className="h-4 w-4 text-foreground" />}
           onClose={() => setOpen(false)}
-          size="md"
+          size="xl"
         >
-          {content}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Cerca categoria…"
+                  className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {staged.length} selezionate
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-4 max-h-[60vh] overflow-auto pr-1">
+              {expenses.length > 0 && (
+                <CategoryCardGroup
+                  label="Uscite"
+                  items={expenses}
+                  selected={stagedSet}
+                  onToggle={toggleStaged}
+                  onSelectAll={() => selectAll(expenses)}
+                  onDeselectAll={() => deselectAll(expenses)}
+                />
+              )}
+              {incomes.length > 0 && (
+                <CategoryCardGroup
+                  label="Entrate"
+                  items={incomes}
+                  selected={stagedSet}
+                  onToggle={toggleStaged}
+                  onSelectAll={() => selectAll(incomes)}
+                  onDeselectAll={() => deselectAll(incomes)}
+                />
+              )}
+              {filtered.length === 0 && (
+                <div className="text-sm text-muted-foreground p-6 text-center">
+                  Nessuna categoria con &quot;{search}&quot;.
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setStaged([])}
+                disabled={staged.length === 0}
+                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Deseleziona tutte
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={applyStaged}
+                  className="text-xs px-3 py-1.5 rounded bg-foreground text-background hover:opacity-90 font-medium"
+                >
+                  Conferma ({staged.length})
+                </button>
+              </div>
+            </div>
+          </div>
         </OverlayModal>
       )}
+    </>
+  );
+}
+
+function CategoryCardGroup({
+  label,
+  items,
+  selected,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+}: {
+  label: string;
+  items: CategoryOpt[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+}) {
+  const allSelected = items.every((c) => selected.has(c.id));
+  const someSelected = items.some((c) => selected.has(c.id));
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between px-1">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+          {label} ({items.length})
+        </span>
+        <button
+          type="button"
+          onClick={allSelected ? onDeselectAll : onSelectAll}
+          className="text-[11px] text-foreground hover:underline"
+        >
+          {allSelected
+            ? "Deseleziona tutte"
+            : someSelected
+              ? `Seleziona altre ${items.length - items.filter((c) => selected.has(c.id)).length}`
+              : "Seleziona tutte"}
+        </button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+        {items.map((c) => {
+          const isOn = selected.has(c.id);
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onToggle(c.id)}
+              className={cn(
+                "rounded-md border p-2.5 text-left transition-colors flex items-start gap-2 min-h-[60px]",
+                isOn
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border bg-background hover:bg-muted",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-4 w-4 rounded-sm border inline-flex items-center justify-center shrink-0 mt-0.5",
+                  isOn ? "border-background bg-background/20" : "border-current",
+                )}
+              >
+                {isOn && <Check className="h-3 w-3" />}
+              </span>
+              <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: c.color ?? "#a1a1aa" }}
+                  />
+                  <span className="text-sm font-medium truncate">{c.name}</span>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

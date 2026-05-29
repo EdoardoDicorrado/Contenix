@@ -1,14 +1,41 @@
 import Link from "next/link";
-import { Plus, Pencil, Trash2, FileText, ArrowUpRight, ArrowDownLeft, FileCode } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  FileText,
+  ArrowUpRight,
+  ArrowDownLeft,
+  AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { listInvoices, getInvoicesStats, type InvoiceStatus } from "@/lib/db/queries/invoices";
+import {
+  listInvoices,
+  getInvoicesStats,
+  getInvoiceMatchStats,
+  listMonthlyInvoiceAggregates,
+  type InvoiceStatus,
+} from "@/lib/db/queries/invoices";
+import { SyncInvoicesButton } from "../sincronizza/sync-buttons";
+import { periodFromSearchParams, periodToWindow } from "@/lib/period";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { deleteInvoiceAction } from "./actions";
 import { FattureFilterBar } from "./filter-bar";
+import { FattureMonthlyCards } from "./monthly-cards";
 
-type SP = Promise<{ type?: string; status?: string; search?: string }>;
+type SP = Promise<{
+  type?: string;
+  status?: string;
+  search?: string;
+  period?: string;
+  month?: string;
+  from?: string;
+  to?: string;
+  year?: string;
+  quarter?: string;
+}>;
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Da pagare",
@@ -35,10 +62,21 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
       ? (sp.status as InvoiceStatus)
       : undefined;
   const search = sp.search || undefined;
+  const period = periodFromSearchParams(sp);
+  const { from, to } = periodToWindow(period);
 
-  const [list, stats] = await Promise.all([
-    listInvoices({ type, status, search }),
+  // Mostro la lista solo per "mese specifico". Tutti gli altri periodi mostrano
+  // la vista a card mensili filtrata.
+  const showInvoiceList = period.kind === "month";
+  const extraQs = buildExtraQs({ type, status, search });
+
+  const [list, stats, monthlyAggs, matchStats] = await Promise.all([
+    showInvoiceList
+      ? listInvoices({ type, status, search, from, to })
+      : Promise.resolve([] as Awaited<ReturnType<typeof listInvoices>>),
     getInvoicesStats(),
+    listMonthlyInvoiceAggregates({ type, status, search, from, to }),
+    getInvoiceMatchStats(),
   ]);
 
   const now = new Date();
@@ -57,13 +95,16 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/fatture/carica">
-            <Button variant="secondary">
-              <FileCode className="h-4 w-4" />
-              Carica file
-            </Button>
-          </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          {matchStats.unmatched > 0 && (
+            <Link href="/fatture/da-rivedere">
+              <Button variant="secondary" className="gap-2">
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                {matchStats.unmatched} da rivedere
+              </Button>
+            </Link>
+          )}
+          <SyncInvoicesButton stats={matchStats} />
           <Link href="/fatture/nuovo">
             <Button>
               <Plus className="h-4 w-4" />
@@ -78,13 +119,16 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
           type: type ?? "",
           status: status ?? "",
           search: search ?? "",
+          period,
         }}
       />
 
-      {list.length === 0 ? (
+      {!showInvoiceList ? (
+        <FattureMonthlyCards data={monthlyAggs} extraQs={extraQs} />
+      ) : list.length === 0 ? (
         <EmptyState
-          title="Nessuna fattura"
-          description="Inizia inserendo manualmente una fattura o aspetta il modulo di upload PDF/XML (prossimo step)."
+          title="Nessuna fattura in questo periodo"
+          description="Cambia mese dalla barra dei filtri o crea una nuova fattura."
           action={
             <Link href="/fatture/nuovo">
               <Button>
@@ -103,7 +147,7 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
                 <th className="text-left font-medium px-4 py-2.5">Numero</th>
                 <th className="text-left font-medium px-4 py-2.5">Controparte</th>
                 <th className="text-left font-medium px-4 py-2.5">Emessa</th>
-                <th className="text-left font-medium px-4 py-2.5">Scadenza</th>
+                <th className="text-left font-medium px-4 py-2.5">Pagata il</th>
                 <th className="text-right font-medium px-4 py-2.5">Totale</th>
                 <th className="text-center font-medium px-4 py-2.5">Stato</th>
                 <th className="px-4 py-2.5 w-24"></th>
@@ -146,9 +190,13 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
                       {formatDate(inv.issueDate)}
                     </td>
                     <td className="px-4 py-3 tabular-nums">
-                      {inv.dueDate ? (
-                        <span className={isOverdue ? "text-danger font-medium" : "text-muted-foreground"}>
-                          {formatDate(inv.dueDate)}
+                      {inv.paidAt ? (
+                        <span className="text-success font-medium">
+                          {formatDate(inv.paidAt)}
+                        </span>
+                      ) : isOverdue ? (
+                        <span className="text-danger font-medium">
+                          scaduta {formatDate(inv.dueDate!)}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
@@ -197,4 +245,17 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
       )}
     </div>
   );
+}
+
+/** Querystring (senza period/month) da preservare nei link mese → dettaglio */
+function buildExtraQs(filters: {
+  type: "purchase" | "sale" | undefined;
+  status: InvoiceStatus | undefined;
+  search: string | undefined;
+}): string {
+  const params = new URLSearchParams();
+  if (filters.type) params.set("type", filters.type);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.search) params.set("search", filters.search);
+  return params.toString();
 }

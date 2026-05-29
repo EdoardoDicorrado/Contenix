@@ -1,6 +1,13 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { movements, categories, employees, financialAccounts } from "@/lib/db/schema";
+import {
+  movements,
+  categories,
+  employees,
+  financialAccounts,
+  invoiceMovements,
+  invoices,
+} from "@/lib/db/schema";
 import { and, desc, eq, gte, ilike, inArray, lt, sql, type SQL } from "drizzle-orm";
 
 export type MovementListFilters = {
@@ -48,7 +55,42 @@ export async function listMovements(filters: MovementListFilters = {}) {
       accountType: financialAccounts.type,
       accountColor: financialAccounts.color,
       isTransfer: movements.isTransfer,
+      transferToAccountId: movements.transferToAccountId,
       createdAt: movements.createdAt,
+      // Fattura primaria collegata (movimento → ≥0 fatture).
+      // Se il movimento è collegato a più fatture (pagamento aggregato),
+      // la cella mostra il count totale e dall'overlay si vede la lista intera.
+      matchedInvoiceId: sql<string | null>`(
+        SELECT im.invoice_id FROM ${invoiceMovements} im
+        WHERE im.movement_id = ${movements.id}
+        ORDER BY im.created_at ASC
+        LIMIT 1
+      )`,
+      matchedInvoiceNumber: sql<string | null>`(
+        SELECT i.number FROM ${invoiceMovements} im
+        JOIN ${invoices} i ON im.invoice_id = i.id
+        WHERE im.movement_id = ${movements.id}
+        ORDER BY im.created_at ASC
+        LIMIT 1
+      )`,
+      matchedInvoiceCounterparty: sql<string | null>`(
+        SELECT i.counterparty_name FROM ${invoiceMovements} im
+        JOIN ${invoices} i ON im.invoice_id = i.id
+        WHERE im.movement_id = ${movements.id}
+        ORDER BY im.created_at ASC
+        LIMIT 1
+      )`,
+      matchedInvoiceType: sql<"sale" | "purchase" | null>`(
+        SELECT i.type FROM ${invoiceMovements} im
+        JOIN ${invoices} i ON im.invoice_id = i.id
+        WHERE im.movement_id = ${movements.id}
+        ORDER BY im.created_at ASC
+        LIMIT 1
+      )`,
+      matchedInvoiceCount: sql<number>`(
+        SELECT COUNT(*)::int FROM ${invoiceMovements} im
+        WHERE im.movement_id = ${movements.id}
+      )`,
     })
     .from(movements)
     .leftJoin(categories, eq(movements.categoryId, categories.id))
@@ -56,6 +98,29 @@ export async function listMovements(filters: MovementListFilters = {}) {
     .leftJoin(financialAccounts, eq(movements.accountId, financialAccounts.id))
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(movements.date), desc(movements.createdAt));
+}
+
+/**
+ * Lista delle fatture collegate a un movimento. Usata per il popover/overlay
+ * "match fattura" dalla tabella movimenti.
+ */
+export async function getMovementInvoiceMatches(movementId: string) {
+  return db
+    .select({
+      id: invoices.id,
+      number: invoices.number,
+      type: invoices.type,
+      counterpartyName: invoices.counterpartyName,
+      issueDate: invoices.issueDate,
+      totalAmount: invoices.totalAmount,
+      matchedAmount: invoiceMovements.matchedAmount,
+      matchType: invoiceMovements.matchType,
+      matchId: invoiceMovements.id,
+    })
+    .from(invoiceMovements)
+    .innerJoin(invoices, eq(invoiceMovements.invoiceId, invoices.id))
+    .where(eq(invoiceMovements.movementId, movementId))
+    .orderBy(desc(invoices.issueDate));
 }
 
 export async function getMovement(id: string) {
@@ -73,9 +138,7 @@ export async function getMovement(id: string) {
  * Le entrate/uscite ESCLUDONO i trasferimenti (sono solo movimentazione di
  * liquidità, non spese/ricavi reali).
  */
-export async function listMonthlyAggregates(
-  filters: Omit<MovementListFilters, "from" | "to"> = {},
-) {
+export async function listMonthlyAggregates(filters: MovementListFilters = {}) {
   const conds: SQL[] = [];
   if (filters.type) conds.push(eq(movements.type, filters.type));
   if (filters.categoryId) conds.push(eq(movements.categoryId, filters.categoryId));
@@ -85,6 +148,8 @@ export async function listMonthlyAggregates(
   if (filters.employeeId) conds.push(eq(movements.employeeId, filters.employeeId));
   if (filters.accountId) conds.push(eq(movements.accountId, filters.accountId));
   if (filters.search) conds.push(ilike(movements.description, `%${filters.search}%`));
+  if (filters.from) conds.push(gte(movements.date, filters.from));
+  if (filters.to) conds.push(lt(movements.date, filters.to));
 
   return db
     .select({

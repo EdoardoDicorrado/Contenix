@@ -52,12 +52,22 @@ export function InlineCategoryEditor({
   const [newCategoryId, setNewCategoryId] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  // Snapshot della categoria PRIMA del cambio. Necessaria per "Annulla cambio":
+  // dopo router.refresh() la prop currentCategoryId punta alla nuova categoria,
+  // quindi non possiamo usarla per fare il rollback.
+  const [previousState, setPreviousState] = useState<{
+    id: string | null;
+    name: string | null;
+  } | null>(null);
 
   function handleChange(picked: string | null) {
     if (picked === currentCategoryId) {
       setEditing(false);
       return;
     }
+    // Cattura lo stato PRE-cambio prima di qualunque refresh.
+    const snapshot = { id: currentCategoryId, name: currentCategoryName };
+
     const cat = localCategories.find((c) => c.id === picked);
     if (cat) {
       setOptimisticName({ name: cat.name, color: cat.color });
@@ -67,6 +77,7 @@ export function InlineCategoryEditor({
     }
     setEditing(false);
     setNewCategoryId(picked);
+    setPreviousState(snapshot);
 
     startTransition(async () => {
       const res = await updateMovementCategoryAction({
@@ -79,21 +90,24 @@ export function InlineCategoryEditor({
         router.refresh();
       } else {
         setOptimisticName(null);
+        setPreviousState(null);
       }
     });
   }
 
   function handleUndo() {
-    // Ripristina la categoria originale (currentCategoryId è quella server-rendered)
+    // Ripristina la categoria pre-cambio salvata in handleChange.
+    const target = previousState?.id ?? null;
     startTransition(async () => {
       const res = await updateMovementCategoryAction({
         movementId,
-        categoryId: currentCategoryId,
+        categoryId: target,
       });
       if (res.ok) {
         setOptimisticName(null);
         setNewCategoryId(null);
         setNewCategoryName(null);
+        setPreviousState(null);
         setConflicts([]);
         setModalOpen(false);
         router.refresh();
@@ -161,7 +175,7 @@ export function InlineCategoryEditor({
           conflicts={conflicts}
           newCategoryId={newCategoryId}
           newCategoryName={newCategoryName}
-          previousCategoryLabel={currentCategoryName ?? "Senza categoria"}
+          previousCategoryLabel={previousState?.name ?? "Senza categoria"}
           onResolved={(ruleId) => setConflicts((prev) => prev.filter((c) => c.ruleId !== ruleId))}
           onClose={() => setModalOpen(false)}
           onUndo={handleUndo}

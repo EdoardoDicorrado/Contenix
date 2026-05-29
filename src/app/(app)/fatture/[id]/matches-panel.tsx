@@ -89,9 +89,11 @@ export async function MatchesPanel({
             {linked.map((l) => {
               const isIncome = l.movement.type === "income";
               return (
-                <li key={l.id} className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div className="min-w-0 flex flex-col gap-0.5">
-                    <span className="text-sm text-foreground truncate">{l.movement.description}</span>
+                <li key={l.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex flex-col gap-0.5 flex-1">
+                    <span className="text-sm text-foreground whitespace-pre-wrap break-words">
+                      {l.movement.description}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {formatDate(l.movement.date)} ·{" "}
                       <Badge tone="neutral" className="ml-1">
@@ -152,12 +154,12 @@ export async function MatchesPanel({
               );
               return (
                 <li key={s.movement.id} className="px-4 py-3 flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-foreground truncate">
+                  <div className="min-w-0 flex flex-col gap-1 flex-1">
+                    <div className="flex items-start gap-2 flex-wrap">
+                      <span className="text-sm text-foreground whitespace-pre-wrap break-words flex-1 min-w-0">
                         {s.movement.description}
                       </span>
-                      <Badge tone={SCORE_TONE[cls]}>
+                      <Badge tone={SCORE_TONE[cls]} className="shrink-0 mt-0.5">
                         {SCORE_LABEL[cls]} · {s.score}
                       </Badge>
                     </div>

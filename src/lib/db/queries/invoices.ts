@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { invoices } from "@/lib/db/schema";
+import { invoiceMovements, invoices, movements } from "@/lib/db/schema";
 import { and, desc, eq, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
 
 export type InvoiceStatus =
@@ -26,12 +26,19 @@ export type InvoiceInput = {
   paymentIban?: string | null;
   isCreditNote?: boolean;
   relatedInvoiceId?: string | null;
+  /** Campi opzionali per allegato — settati solo se nuovo upload */
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileMime?: string | null;
+  fileSize?: number | null;
 };
 
 export type InvoiceListFilters = {
   type?: InvoiceType;
   status?: InvoiceStatus;
   search?: string;
+  from?: Date;
+  to?: Date;
 };
 
 export async function listInvoices(filters: InvoiceListFilters = {}) {
@@ -39,12 +46,94 @@ export async function listInvoices(filters: InvoiceListFilters = {}) {
   if (filters.type) conds.push(eq(invoices.type, filters.type));
   if (filters.status) conds.push(eq(invoices.status, filters.status));
   if (filters.search) conds.push(ilike(invoices.counterpartyName, `%${filters.search}%`));
+  if (filters.from) conds.push(gte(invoices.issueDate, filters.from));
+  if (filters.to) conds.push(lt(invoices.issueDate, filters.to));
+
+  // paidAt = data del movimento più recente collegato (via invoice_movements).
+  // L'invoice_id va qualificato esplicitamente come "invoices"."id" perché
+  // dentro la subquery `${invoices.id}` viene stampato solo come "id" e
+  // collide con le altre tabelle joinate.
+  const paidAtSql = sql<Date | null>`(
+    SELECT MAX(m.date) FROM ${movements} m
+    JOIN ${invoiceMovements} im ON im.movement_id = m.id
+    WHERE im.invoice_id = "invoices"."id"
+  )`;
 
   return db
-    .select()
+    .select({
+      id: invoices.id,
+      number: invoices.number,
+      type: invoices.type,
+      counterpartyName: invoices.counterpartyName,
+      counterpartyVat: invoices.counterpartyVat,
+      issueDate: invoices.issueDate,
+      dueDate: invoices.dueDate,
+      totalAmount: invoices.totalAmount,
+      vatAmount: invoices.vatAmount,
+      currency: invoices.currency,
+      status: invoices.status,
+      isCreditNote: invoices.isCreditNote,
+      paidAt: paidAtSql,
+    })
     .from(invoices)
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(invoices.issueDate), desc(invoices.createdAt));
+}
+
+/**
+ * Aggregati mensili delle fatture per la vista a card (come /movimenti).
+ * Mese-per-mese: vendite, acquisti, count.
+ */
+export type MonthlyInvoiceAggregate = {
+  month: string; // YYYY-MM
+  revenue: string;
+  cost: string;
+  /** Vendite del mese ancora da incassare (pending/partial/overdue, escluse note di credito). */
+  receivable: string;
+  count: number;
+};
+
+export async function listMonthlyInvoiceAggregates(
+  filters: Omit<InvoiceListFilters, "from" | "to"> & {
+    from?: Date;
+    to?: Date;
+  } = {},
+): Promise<MonthlyInvoiceAggregate[]> {
+  const conds: SQL[] = [];
+  if (filters.type) conds.push(eq(invoices.type, filters.type));
+  if (filters.status) conds.push(eq(invoices.status, filters.status));
+  if (filters.search) conds.push(ilike(invoices.counterpartyName, `%${filters.search}%`));
+  if (filters.from) conds.push(gte(invoices.issueDate, filters.from));
+  if (filters.to) conds.push(lt(invoices.issueDate, filters.to));
+
+  const rows = await db
+    .select({
+      month: sql<string>`to_char(date_trunc('month', ${invoices.issueDate}), 'YYYY-MM')`,
+      revenue: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoices.type} = 'sale' AND ${invoices.isCreditNote} = false THEN ${invoices.totalAmount}::numeric
+        WHEN ${invoices.type} = 'sale' AND ${invoices.isCreditNote} = true THEN -${invoices.totalAmount}::numeric
+        ELSE 0
+      END), 0)::text`,
+      cost: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoices.type} = 'purchase' AND ${invoices.isCreditNote} = false THEN ${invoices.totalAmount}::numeric
+        WHEN ${invoices.type} = 'purchase' AND ${invoices.isCreditNote} = true THEN -${invoices.totalAmount}::numeric
+        ELSE 0
+      END), 0)::text`,
+      receivable: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoices.type} = 'sale'
+          AND ${invoices.isCreditNote} = false
+          AND ${invoices.status} IN ('pending','partial','overdue')
+        THEN ${invoices.totalAmount}::numeric
+        ELSE 0
+      END), 0)::text`,
+      count: sql<number>`COUNT(*)::int`,
+    })
+    .from(invoices)
+    .where(conds.length ? and(...conds) : undefined)
+    .groupBy(sql`date_trunc('month', ${invoices.issueDate})`)
+    .orderBy(desc(sql`date_trunc('month', ${invoices.issueDate})`));
+
+  return rows;
 }
 
 export async function getInvoice(id: string) {
@@ -68,6 +157,71 @@ export async function updateInvoice(id: string, input: InvoiceInput) {
 
 export async function deleteInvoice(id: string) {
   await db.delete(invoices).where(eq(invoices.id, id));
+}
+
+/**
+ * Lista delle fatture "da rivedere" lato matching:
+ *  - non cancellate
+ *  - matched_total < totale fattura (zero match OPPURE match parziale)
+ *
+ * Restituisce ordinamento "più vecchie prima" così l'utente parte dalle
+ * arretrate. Include `matchedAmount` per distinguere a colpo d'occhio
+ * "completamente da matchare" da "in parte già matchata".
+ */
+export async function listInvoicesToReview() {
+  const matchedTotalSql = sql<string>`COALESCE((
+    SELECT SUM(${invoiceMovements.matchedAmount})
+    FROM ${invoiceMovements}
+    WHERE ${invoiceMovements.invoiceId} = ${invoices.id}
+  ), 0)`;
+
+  return db
+    .select({
+      id: invoices.id,
+      number: invoices.number,
+      type: invoices.type,
+      counterpartyName: invoices.counterpartyName,
+      counterpartyVat: invoices.counterpartyVat,
+      issueDate: invoices.issueDate,
+      dueDate: invoices.dueDate,
+      totalAmount: invoices.totalAmount,
+      isCreditNote: invoices.isCreditNote,
+      matchedAmount: matchedTotalSql,
+    })
+    .from(invoices)
+    .where(
+      and(
+        sql`${invoices.status} <> 'cancelled'`,
+        sql`(${matchedTotalSql})::numeric < ${invoices.totalAmount}::numeric`,
+      ),
+    )
+    .orderBy(invoices.issueDate, invoices.createdAt);
+}
+
+/**
+ * Stats per la card "Match fatture" della sincronizzazione automatica.
+ * Conta solo fatture non cancellate.
+ */
+export async function getInvoiceMatchStats() {
+  const matchedTotalSub = sql<string>`COALESCE((
+    SELECT SUM(${invoiceMovements.matchedAmount})
+    FROM ${invoiceMovements}
+    WHERE ${invoiceMovements.invoiceId} = ${invoices.id}
+  ), 0)`;
+
+  const [row] = await db
+    .select({
+      total: sql<number>`COUNT(*)::int`,
+      matched: sql<number>`COUNT(*) FILTER (WHERE (${matchedTotalSub})::numeric > 0)::int`,
+      fullyMatched: sql<number>`COUNT(*) FILTER (WHERE (${matchedTotalSub})::numeric >= ${invoices.totalAmount}::numeric)::int`,
+      unmatched: sql<number>`COUNT(*) FILTER (WHERE (${matchedTotalSub})::numeric = 0)::int`,
+    })
+    .from(invoices)
+    .where(sql`${invoices.status} <> 'cancelled'`);
+
+  return (
+    row ?? { total: 0, matched: 0, fullyMatched: 0, unmatched: 0 }
+  );
 }
 
 export async function getInvoicesStats() {

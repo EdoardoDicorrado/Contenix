@@ -1,26 +1,27 @@
 import Link from "next/link";
-import { Pencil, Trash2, ArrowLeftRight, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NewMovementButton } from "./new-movement-button";
 import { getPrimaryAccount } from "@/lib/db/queries/financial-accounts";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   countUncategorizedMovements,
+  getMovementsStats,
   listMonthlyAggregates,
   listMovements,
 } from "@/lib/db/queries/movements";
+import { SyncCategoriesButton } from "../sincronizza/sync-buttons";
 import { listCategories } from "@/lib/db/queries/categories";
 import { listAccounts } from "@/lib/db/queries/financial-accounts";
+import { listEmployees } from "@/lib/db/queries/employees";
 import {
   periodFromSearchParams,
   periodToWindow,
 } from "@/lib/period";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import { deleteMovementAction } from "./actions";
 import { FilterBar } from "./filter-bar";
 import { MonthlyCards } from "./monthly-cards";
 import { MonthNavigation } from "./month-navigation";
-import { InlineCategoryEditor } from "./inline-category-editor";
+import { EditableMovementRow } from "./editable-movement-row";
 
 type SP = Promise<{
   type?: string;
@@ -46,32 +47,37 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
   const period = periodFromSearchParams(sp);
   const { from, to } = periodToWindow(period);
 
-  // Vista dettaglio mese se è stato selezionato un mese specifico
+  // Vista tabella movimenti SOLO per "mese specifico". Tutti gli altri periodi
+  // (quarter / half-year / ytd / year / full-year / range / all) mostrano la
+  // vista a card mensili filtrata al periodo selezionato.
   const showMonthDetail = period.kind === "month";
-  // Vista tabella anche per range custom / trimestre / anno (no card mensili)
-  const showFlatTable =
-    period.kind === "range" ||
-    period.kind === "quarter" ||
-    period.kind === "ytd" ||
-    period.kind === "year";
 
   const extraQs = buildExtraQs({ type, categoryIds, accountId, search });
 
   // Caricamento condizionale per evitare query inutili
-  const wantsMovements = showMonthDetail || showFlatTable;
-  const [cats, accounts, uncategorizedCount, monthlyData, movs, primaryAccount] =
-    await Promise.all([
-      listCategories(),
-      listAccounts({ activeOnly: false }),
-      countUncategorizedMovements(),
-      listMonthlyAggregates({ type, categoryIds, accountId, search }),
-      wantsMovements
-        ? listMovements({ type, categoryIds, accountId, search, from, to })
-        : Promise.resolve([] as Awaited<ReturnType<typeof listMovements>>),
-      getPrimaryAccount(),
-    ]);
-
-  const availableMonths = monthlyData.map((m) => m.month);
+  const wantsMovements = showMonthDetail;
+  const [
+    cats,
+    accounts,
+    uncategorizedCount,
+    monthlyData,
+    movs,
+    primaryAccount,
+    movStats,
+    employeesAll,
+  ] = await Promise.all([
+    listCategories(),
+    listAccounts({ activeOnly: false }),
+    countUncategorizedMovements(),
+    // Aggregati per le card: filtra al periodo se specificato (quarter/ytd/range/...)
+    listMonthlyAggregates({ type, categoryIds, accountId, search, from, to }),
+    wantsMovements
+      ? listMovements({ type, categoryIds, accountId, search, from, to })
+      : Promise.resolve([] as Awaited<ReturnType<typeof listMovements>>),
+    getPrimaryAccount(),
+    getMovementsStats(),
+    listEmployees(false),
+  ]);
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-4">
@@ -88,11 +94,12 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
           {uncategorizedCount > 0 && (
             <Link href="/movimenti/da-rivedere">
               <Button variant="secondary" className="gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-600" />
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
                 {uncategorizedCount} da rivedere
               </Button>
             </Link>
           )}
+          <SyncCategoriesButton stats={movStats} />
           <NewMovementButton
             categories={cats.map((c) => ({
               id: c.id,
@@ -124,7 +131,6 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
           {showMonthDetail && period.month && (
             <MonthNavigation
               currentMonth={period.month}
-              availableMonths={availableMonths}
               extraQs={extraQs}
             />
           )}
@@ -143,101 +149,36 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
                     <th className="text-left font-medium px-4 py-2.5">Conto</th>
                     <th className="text-left font-medium px-4 py-2.5">Descrizione</th>
                     <th className="text-left font-medium px-4 py-2.5">Categoria</th>
-                    <th className="text-left font-medium px-4 py-2.5">Dipendente</th>
+                    <th className="text-left font-medium px-4 py-2.5">Match fattura</th>
                     <th className="text-right font-medium px-4 py-2.5">Importo</th>
                     <th className="px-4 py-2.5 w-24"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {movs.map((m) => {
-                    const isIncome = m.type === "income";
-                    const amount = parseFloat(m.amount);
-                    return (
-                      <tr key={m.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 text-muted-foreground tabular-nums">
-                          {formatDate(m.date)}
-                        </td>
-                        <td className="px-4 py-3">
-                          {m.accountId && m.accountName ? (
-                            <Link
-                              href={`/conti/${m.accountId}`}
-                              className="inline-flex items-center gap-1.5 hover:text-primary"
-                              title={`Vai al conto ${m.accountName}`}
-                            >
-                              <span
-                                className="h-2 w-2 rounded-full shrink-0"
-                                style={{ backgroundColor: m.accountColor ?? "#a1a1aa" }}
-                              />
-                              <span className="text-foreground truncate max-w-32">
-                                {m.accountName}
-                              </span>
-                              {m.isTransfer && (
-                                <ArrowLeftRight
-                                  className="h-3 w-3 text-muted-foreground shrink-0"
-                                  aria-label="Trasferimento tra conti"
-                                />
-                              )}
-                            </Link>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-foreground">{m.description}</td>
-                        <td className="px-4 py-3">
-                          <InlineCategoryEditor
-                            movementId={m.id}
-                            currentCategoryId={m.categoryId}
-                            currentCategoryName={m.categoryName}
-                            currentCategoryColor={m.categoryColor}
-                            movementType={m.type}
-                            categories={cats.map((c) => ({
-                              id: c.id,
-                              name: c.name,
-                              type: c.type,
-                              color: c.color,
-                            }))}
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-foreground">
-                          {m.employeeFirstName ? (
-                            `${m.employeeLastName} ${m.employeeFirstName}`
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td
-                          className={
-                            "px-4 py-3 text-right font-medium tabular-nums " +
-                            (isIncome ? "text-success" : "text-danger")
-                          }
-                        >
-                          {isIncome ? "+" : "−"}
-                          {formatCurrency(amount)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            <Link href={`/movimenti/${m.id}/modifica`}>
-                              <Button variant="ghost" size="icon" aria-label="Modifica">
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            </Link>
-                            <form action={deleteMovementAction}>
-                              <input type="hidden" name="id" value={m.id} />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                type="submit"
-                                aria-label="Elimina"
-                                className="text-danger hover:bg-danger/10"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </form>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {movs.map((m) => (
+                    <EditableMovementRow
+                      key={m.id}
+                      movement={m}
+                      categories={cats.map((c) => ({
+                        id: c.id,
+                        name: c.name,
+                        type: c.type,
+                        color: c.color,
+                      }))}
+                      employees={employeesAll.map((e) => ({
+                        id: e.id,
+                        firstName: e.firstName,
+                        lastName: e.lastName,
+                      }))}
+                      accounts={accounts.map((a) => ({
+                        id: a.id,
+                        name: a.name,
+                        type: a.type,
+                        isPrimary: a.isPrimary,
+                        color: a.color,
+                      }))}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
