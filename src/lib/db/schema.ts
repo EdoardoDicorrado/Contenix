@@ -11,6 +11,7 @@ import {
   jsonb,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
@@ -214,6 +215,11 @@ export const movements = pgTable(
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     type: movementTypeEnum("type").notNull(),
     description: text("description").notNull(),
+    // Descrizione "pulita" da normalizer (es. POS/ADUE/Bonifico noti).
+    // L'originale resta in `description`: il matching engine legge sempre
+    // l'originale, la UI mostra prevalentemente la pulita con tooltip
+    // sull'originale. Nullable: se NULL la UI cade su `description`.
+    descriptionClean: text("description_clean"),
     categoryId: uuid("category_id").references(() => categories.id, {
       onDelete: "set null",
     }),
@@ -228,6 +234,15 @@ export const movements = pgTable(
     transferToAccountId: uuid("transfer_to_account_id").references(() => financialAccounts.id, {
       onDelete: "set null",
     }),
+    // Marca il movimento come "non abbinabile" a fatture (es. commissioni
+    // bancarie, IVA versata, stipendi). Esclude da auto-match, picker e
+    // metriche "da rivedere".
+    matchUnavailable: boolean("match_unavailable").notNull().default(false),
+    // Impronta deterministica del movimento (SHA-256 di accountId + date +
+    // amount + type + description normalizzata + occurrenceIndex). Usata per
+    // dedup automatica al re-import: due righe con lo stesso hash sono lo
+    // stesso movimento. Vincolo UNIQUE + NOT NULL applicati post-backfill.
+    uniqueHash: text("unique_hash").notNull(),
     createdById: text("created_by_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -240,6 +255,8 @@ export const movements = pgTable(
     index("movements_category_idx").on(t.categoryId),
     index("movements_account_idx").on(t.accountId),
     index("movements_transfer_idx").on(t.isTransfer),
+    index("movements_unavailable_idx").on(t.matchUnavailable),
+    uniqueIndex("movements_unique_hash_idx").on(t.uniqueHash),
   ],
 );
 
@@ -347,11 +364,55 @@ export const invoiceMovements = pgTable(
       .references(() => movements.id, { onDelete: "cascade" }),
     matchedAmount: numeric("matched_amount", { precision: 14, scale: 2 }).notNull(),
     matchType: varchar("match_type", { length: 20 }).notNull().default("manual"),
+    /**
+     * Stato di approvazione del match:
+     *  - 'approved': definitivo, conta sui totali e sullo status fattura
+     *  - 'pending':  proposto dal motore auto, richiede approvazione utente
+     *  - 'rejected': scartato (di solito viene cancellato direttamente)
+     *
+     * Default 'approved' per backwards-compat: i match esistenti restano
+     * efficaci, solo i nuovi auto-match passano per /fatture/in-approvazione.
+     */
+    approvalStatus: varchar("approval_status", { length: 20 })
+      .notNull()
+      .default("approved"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
     index("invoice_movements_invoice_idx").on(t.invoiceId),
     index("invoice_movements_movement_idx").on(t.movementId),
+    index("invoice_movements_approval_idx").on(t.approvalStatus),
+  ],
+);
+
+// Alias / pseudonimi di controparti fatture, appresi dai match manuali.
+// Quando l'utente collega manualmente una fattura (es. "Acme SRL") a un
+// movimento la cui descrizione cita altro nome (es. "ACME HOLDINGS BV"),
+// salviamo il pattern così la prossima volta lo score auto sale.
+export const counterpartyAliases = pgTable(
+  "counterparty_aliases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Nome controparte canonica (lowercase, normalizzato). */
+    counterpartyKey: varchar("counterparty_key", { length: 255 }).notNull(),
+    /** Pattern (lowercase) trovato nelle descrizioni dei movimenti. */
+    aliasPattern: varchar("alias_pattern", { length: 200 }).notNull(),
+    /** Punti da sommare allo score quando il pattern matcha. */
+    boost: integer("boost").notNull().default(30),
+    /** 'auto' = appreso da match manuale; 'manual' = inserito dall'utente. */
+    source: varchar("source", { length: 16 }).notNull().default("auto"),
+    /** Quante volte è stato usato in scoring. */
+    usageCount: integer("usage_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("counterparty_aliases_key_idx").on(t.counterpartyKey),
+    uniqueIndex("counterparty_aliases_uniq").on(
+      t.counterpartyKey,
+      t.aliasPattern,
+    ),
   ],
 );
 

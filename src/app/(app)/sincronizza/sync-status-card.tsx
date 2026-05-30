@@ -5,19 +5,24 @@ import { useRouter } from "next/navigation";
 import {
   Wand2,
   Loader2,
-  CheckCircle2,
   AlertCircle,
-  Tag,
-  ArrowLeftRight,
-  HelpCircle,
   ArrowRight,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { CheckToggle } from "@/components/ui/check-toggle";
+import { PushDrawer } from "@/components/ui/push-drawer";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/utils";
 import { appendSyncRun } from "@/lib/sync-history";
 import { applyRulesAction, type ApplyRulesActionResult } from "../regole/actions";
+import { SyncStatRow } from "./sync-stat-row";
+
+const WHITE_BTN_CLASS = cn(
+  "inline-flex items-center justify-center gap-2 h-10 w-full rounded-md text-sm font-medium",
+  "bg-foreground text-background hover:opacity-90 transition-opacity cursor-pointer",
+  "disabled:opacity-50 disabled:cursor-not-allowed",
+);
 
 export type MovementsStats = {
   total: number;
@@ -39,6 +44,7 @@ export function SyncStatusCard({ stats }: { stats: MovementsStats }) {
   const [overrideExisting, setOverrideExisting] = useState(false);
   const [lastResult, setLastResult] = useState<ApplyRulesActionResult | null>(null);
   const [ranAt, setRanAt] = useState<Date | null>(null);
+  const [changesOpen, setChangesOpen] = useState(false);
 
   // Carica l'ultimo run dal localStorage al mount. Iniziamo a null (SSR-safe)
   // e idratiamo dopo il mount per evitare hydration mismatch.
@@ -80,102 +86,116 @@ export function SyncStatusCard({ stats }: { stats: MovementsStats }) {
     });
   }
 
-  function clearLastResult() {
-    setLastResult(null);
-    setRanAt(null);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-  }
-
   return (
-    <div className="rounded-lg border border-border bg-background p-5 flex flex-col gap-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatBox
-          icon={<HelpCircle className="h-3.5 w-3.5" />}
-          label="Totale"
-          value={stats.total}
-          accent="neutral"
-        />
-        <StatBox
-          icon={<Tag className="h-3.5 w-3.5" />}
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col">
+        <SyncStatRow label="Totale movimenti" value={stats.total.toLocaleString("it-IT")} />
+        <SyncStatRow
           label="Categorizzati"
-          value={stats.categorized}
-          accent="green"
+          value={`${stats.categorized.toLocaleString("it-IT")} / ${stats.total.toLocaleString("it-IT")}`}
+          hint={
+            stats.total > 0
+              ? `${((stats.categorized / stats.total) * 100).toFixed(0)}%`
+              : undefined
+          }
         />
-        <StatBox
-          icon={<ArrowLeftRight className="h-3.5 w-3.5" />}
-          label="Trasferimenti"
-          value={stats.transfers}
-          accent="blue"
+        <SyncStatRow
+          label="Trasferimenti tra conti"
+          value={stats.transfers.toLocaleString("it-IT")}
+          hint={
+            stats.total > 0
+              ? `${((stats.transfers / stats.total) * 100).toFixed(0)}%`
+              : undefined
+          }
         />
-        <StatBox
-          icon={<AlertCircle className="h-3.5 w-3.5" />}
+        <SyncStatRow
           label="Senza categoria"
-          value={stats.unmatched}
-          accent={stats.unmatched > 0 ? "amber" : "neutral"}
+          value={stats.unmatched.toLocaleString("it-IT")}
+          loss={stats.unmatched > 0}
+          hint={
+            stats.unmatched > 0 && stats.total > 0
+              ? `${((stats.unmatched / stats.total) * 100).toFixed(0)}% da rivedere`
+              : "Tutto categorizzato"
+          }
         />
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-        <label className="flex items-center gap-2 text-xs cursor-pointer">
-          <input
-            type="checkbox"
-            checked={overrideExisting}
-            onChange={(e) => setOverrideExisting(e.target.checked)}
-            disabled={pending}
-          />
-          <span>
-            Sovrascrivi categorizzazioni esistenti{" "}
-            <span className="text-muted-foreground">
-              (riapplica anche ai movimenti già categorizzati)
-            </span>
-          </span>
-        </label>
+      <div className="flex flex-col gap-4 pt-1">
+        <CheckToggle
+          checked={overrideExisting}
+          onChange={setOverrideExisting}
+          disabled={pending}
+          label="Sovrascrivi categorizzazioni esistenti"
+          description="Riapplica anche ai movimenti già categorizzati"
+        />
 
-        <Button onClick={handleApply} disabled={pending} className="gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={handleApply}
+          disabled={pending}
+          className={WHITE_BTN_CLASS}
+        >
           {pending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Wand2 className="h-4 w-4" />
           )}
           {pending ? "Riapplicazione…" : "Riapplica regole"}
-        </Button>
+        </button>
       </div>
 
       {lastResult?.ok && (
-        <div className="border-t border-border pt-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-xs text-green-900 flex-wrap">
-            <CheckCircle2 className="h-3.5 w-3.5 text-green-700 shrink-0" />
-            <span>
-              Ultimo run{ranAt ? ` (${formatRelative(ranAt)})` : ""}:{" "}
-              {lastResult.result.totalScanned} scansionati,{" "}
-              <span className="font-medium">{lastResult.result.categorized}</span> categorizzati,{" "}
-              <span className="font-medium">{lastResult.result.markedAsTransfer}</span> marcati transfer,{" "}
-              <span className="font-medium">{lastResult.result.movedToReview}</span> spostati in &quot;Da rivedere&quot;.
-            </span>
-            <button
-              type="button"
-              onClick={clearLastResult}
-              className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
-              title="Nascondi il report finché non rilanci"
-            >
-              Pulisci
-            </button>
+        <div className="border-t border-border pt-4 flex flex-col gap-3">
+          <div className="text-xs text-foreground leading-relaxed">
+            <span className="text-muted-foreground">
+              Ultimo run{ranAt ? ` ${formatRelative(ranAt)}` : ""}:
+            </span>{" "}
+            {lastResult.result.totalScanned} scansionati,{" "}
+            <span className="font-medium">{lastResult.result.categorized}</span> categorizzati,{" "}
+            <span className="font-medium">{lastResult.result.markedAsTransfer}</span> transfer,{" "}
+            <span className="font-medium">{lastResult.result.movedToReview}</span> in &quot;Da rivedere&quot;.
           </div>
           {lastResult.result.changes.length > 0 && (
-            <ChangesReport changes={lastResult.result.changes} />
+            <button
+              type="button"
+              onClick={() => setChangesOpen(true)}
+              className="inline-flex items-center justify-between gap-2 text-sm text-foreground border border-border rounded-md px-3 py-2 hover:bg-muted transition-colors cursor-pointer"
+            >
+              <span className="inline-flex items-center gap-2">
+                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                Vedi cambiamenti applicati
+              </span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {lastResult.result.changes.length}{" "}
+                {lastResult.result.changes.length === 1 ? "gruppo" : "gruppi"}
+              </span>
+            </button>
           )}
         </div>
       )}
 
       {lastResult && !lastResult.ok && (
-        <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-red-900">
-          <AlertCircle className="h-3.5 w-3.5" />
+        <div className="flex items-start gap-2 border-t border-border pt-4 text-xs text-danger">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
           {lastResult.error}
         </div>
+      )}
+
+      {/* Drawer secondario: dettaglio cambiamenti applicati (stacked sopra) */}
+      {lastResult?.ok && (
+        <PushDrawer
+          open={changesOpen}
+          onClose={() => setChangesOpen(false)}
+          stacked
+          backLabel="Sincronizza categorie"
+          title="Cambiamenti applicati"
+          subtitle={`${lastResult.result.changes.length} ${
+            lastResult.result.changes.length === 1 ? "gruppo" : "gruppi"
+          } di movimenti spostati`}
+
+        >
+          <ChangesReport changes={lastResult.result.changes} />
+        </PushDrawer>
       )}
     </div>
   );
@@ -188,60 +208,66 @@ type ChangeGroup = ApplyRulesOk["result"]["changes"][number];
 function ChangesReport({ changes }: { changes: ChangeGroup[] }) {
   const totalMoved = changes.reduce((s, c) => s + c.count, 0);
   return (
-    <details className="rounded-md border border-border bg-muted/30">
-      <summary className="cursor-pointer list-none px-3 py-2 text-xs flex items-center justify-between hover:bg-muted/50 rounded-md">
-        <span className="flex items-center gap-1.5 text-foreground font-medium">
-          <ArrowRight className="h-3 w-3 text-blue-600" />
-          Vedi cambiamenti ({totalMoved} movimenti spostati, {changes.length}{" "}
-          {changes.length === 1 ? "gruppo" : "gruppi"})
-        </span>
-        <ChevronDown className="h-3 w-3 text-muted-foreground group-open:rotate-180 transition-transform" />
-      </summary>
-      <div className="px-2 pb-2 pt-1 flex flex-col gap-1">
+    <div className="flex flex-col">
+      <div className="py-2 text-xs text-muted-foreground">
+        {totalMoved} {totalMoved === 1 ? "movimento spostato" : "movimenti spostati"}
+      </div>
+      <div className="flex flex-col">
         {changes.map((c, i) => (
           <ChangeGroupRow key={i} group={c} />
         ))}
       </div>
-    </details>
+    </div>
   );
 }
 
 function ChangeGroupRow({ group }: { group: ChangeGroup }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-md bg-background border border-border">
+    <div className="py-3 border-b border-border last:border-b-0">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full px-3 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-muted/30 rounded-md"
+        className="w-full text-left flex items-center justify-between gap-2 cursor-pointer group"
       >
-        <span className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-muted-foreground">{group.fromLabel}</span>
-          <ArrowRight className="h-3 w-3 text-muted-foreground" />
-          <span className="font-medium">{group.toLabel}</span>
-          <span className="text-muted-foreground">· {group.count}</span>
-        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1 inline-flex items-center gap-1.5">
+            {group.fromLabel}
+            <ArrowRight className="h-3 w-3" />
+            <span className="text-foreground normal-case font-medium tracking-normal">
+              {group.toLabel}
+            </span>
+          </div>
+          <div className="text-2xl font-semibold tabular-nums text-foreground">
+            {group.count}
+          </div>
+        </div>
         {open ? (
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         )}
       </button>
       {open && (
-        <ul className="border-t border-border divide-y divide-border">
+        <ul className="mt-3 flex flex-col divide-y divide-border rounded-md border border-border bg-muted/20 overflow-hidden">
           {group.examples.map((ex) => (
-            <li key={ex.id} className="px-3 py-1 text-[11px] flex items-center gap-2">
+            <li
+              key={ex.id}
+              className="px-3 py-2 text-xs flex items-center gap-2"
+            >
               <span className="text-muted-foreground tabular-nums w-16 shrink-0">
                 {formatDate(new Date(ex.date))}
               </span>
-              <span className="flex-1 truncate text-foreground">{ex.description}</span>
+              <span className="flex-1 truncate text-foreground">
+                {ex.description}
+              </span>
               <span className="tabular-nums text-muted-foreground shrink-0">
                 {formatCurrency(parseFloat(ex.amount))}
               </span>
             </li>
           ))}
           {group.count > group.examples.length && (
-            <li className="px-3 py-1 text-[11px] text-muted-foreground italic">
+            <li className="px-3 py-2 text-xs text-muted-foreground italic">
               … e altri {group.count - group.examples.length}
             </li>
           )}
@@ -251,34 +277,3 @@ function ChangeGroupRow({ group }: { group: ChangeGroup }) {
   );
 }
 
-function StatBox({
-  icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  accent: "green" | "blue" | "amber" | "neutral";
-}) {
-  // Schema "data wins": l'accento colora SOLO il numero (verde positivo,
-  // rosso negativo, neutro altrimenti). L'icona e la label restano neutrali.
-  const valueClass =
-    accent === "green" && value > 0
-      ? "text-success"
-      : accent === "amber" && value > 0
-        ? "text-danger"
-        : "text-foreground";
-  return (
-    <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <div className={`text-2xl font-semibold tabular-nums mt-0.5 ${valueClass}`}>
-        {value}
-      </div>
-    </div>
-  );
-}

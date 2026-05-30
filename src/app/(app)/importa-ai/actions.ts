@@ -15,6 +15,8 @@ import {
 } from "@/lib/db/queries/categorization-rules";
 import { listCategories } from "@/lib/db/queries/categories";
 import { getPrimaryAccount } from "@/lib/db/queries/financial-accounts";
+import { normalizeBankDescription } from "@/lib/description-normalizer";
+import { computeMovementHash, movementSignature } from "@/lib/movement-hash";
 
 export type AnalyzeResult =
   | {
@@ -144,7 +146,7 @@ const ConfirmMetadataSchema = z.object({
 });
 
 export type ConfirmResult =
-  | { ok: true; inserted: number }
+  | { ok: true; inserted: number; skipped: number }
   | { ok: false; error: string };
 
 export async function confirmExcelImportAction(formData: FormData): Promise<ConfirmResult> {
@@ -196,6 +198,8 @@ export async function confirmExcelImportAction(formData: FormData): Promise<Conf
   }
 
   const manualCategories = parsed.data.manualCategories;
+  const seenInBatch = new Map<string, number>();
+  let insertedCount = 0;
   try {
     await db.transaction(async (tx) => {
       const values = toInsert.map((r) => {
@@ -207,10 +211,8 @@ export async function confirmExcelImportAction(formData: FormData): Promise<Conf
         );
 
         if (hasManualOverride) {
-          // Override esplicito dell'utente (anche null = "nessuna categoria")
           categoryId = manualCategories[idxKey];
         } else {
-          // Auto-apply regole + fallback
           const matched = findMatchingRule(r.description, r.type, allRules);
           const fallback =
             r.type === "income"
@@ -220,18 +222,46 @@ export async function confirmExcelImportAction(formData: FormData): Promise<Conf
           if (matched) matchedRuleIds.push(matched.ruleId);
         }
 
-        return {
+        const amount = r.amount.toFixed(2);
+        const sig = movementSignature({
+          accountId: targetAccountId,
           date: r.date,
-          amount: r.amount.toFixed(2),
+          amount,
           type: r.type,
           description: r.description,
+        });
+        const occurrenceIndex = seenInBatch.get(sig) ?? 0;
+        seenInBatch.set(sig, occurrenceIndex + 1);
+        const uniqueHash = computeMovementHash({
+          accountId: targetAccountId,
+          date: r.date,
+          amount,
+          type: r.type,
+          description: r.description,
+          occurrenceIndex,
+        });
+
+        const norm = normalizeBankDescription(r.description);
+        return {
+          date: r.date,
+          amount,
+          type: r.type,
+          description: r.description,
+          descriptionClean: norm.changed ? norm.clean : null,
           categoryId,
           accountId: targetAccountId,
+          uniqueHash,
         };
       });
       const CHUNK = 500;
       for (let i = 0; i < values.length; i += CHUNK) {
-        await tx.insert(movements).values(values.slice(i, i + CHUNK));
+        const chunk = values.slice(i, i + CHUNK);
+        const result = await tx
+          .insert(movements)
+          .values(chunk)
+          .onConflictDoNothing({ target: movements.uniqueHash })
+          .returning({ id: movements.id });
+        insertedCount += result.length;
       }
     });
     if (matchedRuleIds.length > 0) {
@@ -248,5 +278,9 @@ export async function confirmExcelImportAction(formData: FormData): Promise<Conf
   revalidatePath("/conti");
   revalidatePath("/");
 
-  return { ok: true, inserted: toInsert.length };
+  return {
+    ok: true,
+    inserted: insertedCount,
+    skipped: toInsert.length - insertedCount,
+  };
 }

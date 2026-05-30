@@ -12,6 +12,7 @@ import { periodToQueryString, type PeriodValue } from "@/lib/period";
 
 type TypeFilter = "" | "purchase" | "sale";
 type StatusFilter = "" | "pending" | "partial" | "paid" | "overdue" | "cancelled";
+type OriginFilter = "" | "cassetto" | "estere";
 
 const TYPE_OPTIONS: FilterOption<TypeFilter>[] = [
   { value: "", label: "Tipo: tutti" },
@@ -28,6 +29,12 @@ const STATUS_OPTIONS: FilterOption<StatusFilter>[] = [
   { value: "cancelled", label: "Annullata" },
 ];
 
+const ORIGIN_OPTIONS: FilterOption<OriginFilter>[] = [
+  { value: "", label: "Origine: tutte" },
+  { value: "cassetto", label: "Cassetto fiscale" },
+  { value: "estere", label: "Estere (PDF)" },
+];
+
 export function FattureFilterBar({
   initial,
 }: {
@@ -35,6 +42,7 @@ export function FattureFilterBar({
     type: TypeFilter;
     status: StatusFilter;
     search: string;
+    origin: OriginFilter;
     period: PeriodValue;
   };
 }) {
@@ -94,6 +102,7 @@ export function FattureFilterBar({
     !!initial.type ||
     !!initial.status ||
     !!initial.search ||
+    !!initial.origin ||
     initial.period.kind !== "all";
 
   return (
@@ -128,6 +137,13 @@ export function FattureFilterBar({
         value={initial.status}
         onChange={(v) => pushPatch({ status: v || undefined })}
         overlayTitle="Filtra per stato"
+      />
+
+      <FilterButton
+        label="Origine"
+        options={ORIGIN_OPTIONS}
+        value={initial.origin}
+        onChange={(v) => pushPatch({ origin: v || undefined })}
       />
 
       {hasAnyFilter && (

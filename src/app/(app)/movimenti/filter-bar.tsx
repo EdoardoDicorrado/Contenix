@@ -112,55 +112,68 @@ export function FilterBar({
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-border bg-background">
+    <div className="flex flex-col gap-2 mt-4">
+      {/* Barra ricerca: rispetta il padding di pagina, niente bordi
+          arrotondati, solo border-b sottile come separatore. */}
       <form
         onSubmit={handleSearchSubmit}
-        className="flex items-center gap-1 flex-1 min-w-48"
+        className="border-b border-border bg-background"
       >
-        <div className="relative flex-1">
-          <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <div className="relative">
+          <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Cerca descrizione…"
-            className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-14 w-full bg-transparent pl-10 pr-3 text-base placeholder:text-muted-foreground focus-visible:outline-none"
           />
         </div>
       </form>
 
-      <PeriodFilter value={initial.period} onChange={setPeriod} />
+      {/* Filtri pill grandi */}
+      <div className="flex flex-wrap items-center gap-2 py-2">
+        <PeriodFilter
+          value={initial.period}
+          onChange={setPeriod}
+          variant="pill"
+        />
 
-      <CategoryMultiFilter
-        categories={categories}
-        selectedIds={initial.categoryIds}
-        onChange={(ids) => pushPatch({ categoryIds: ids.length > 0 ? ids : undefined })}
-      />
+        <CategoryMultiFilter
+          categories={categories}
+          selectedIds={initial.categoryIds}
+          onChange={(ids) =>
+            pushPatch({ categoryIds: ids.length > 0 ? ids : undefined })
+          }
+        />
 
-      <FilterButton
-        label="Tipo"
-        options={typeOptions}
-        value={initial.type ?? "all"}
-        onChange={(v) =>
-          pushPatch({ type: v === "all" ? undefined : v })
-        }
-      />
+        <FilterButton
+          label="Tipo"
+          options={typeOptions}
+          value={initial.type ?? "all"}
+          onChange={(v) => pushPatch({ type: v === "all" ? undefined : v })}
+          variant="pill"
+        />
 
-      <FilterButton
-        label="Conto"
-        options={accountOptions}
-        value={initial.accountId ?? ""}
-        onChange={(v) => pushPatch({ accountId: v || undefined })}
-      />
+        <FilterButton
+          label="Conto"
+          options={accountOptions}
+          value={initial.accountId ?? ""}
+          onChange={(v) => pushPatch({ accountId: v || undefined })}
+          variant="pill"
+        />
 
-      {hasAnyFilter && (
-        <button
-          type="button"
-          onClick={() => router.push("/movimenti")}
-          className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 ml-auto"
-        >
-          <X className="h-3 w-3" /> Reset
-        </button>
-      )}
+        {hasAnyFilter && (
+          <button
+            type="button"
+            onClick={() => router.push("/movimenti")}
+            aria-label="Reset filtri"
+            title="Reset filtri"
+            className="h-10 w-10 inline-flex items-center justify-center rounded-full border border-foreground/30 bg-transparent text-foreground hover:bg-foreground hover:text-background hover:border-foreground transition-colors cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -241,16 +254,16 @@ function CategoryMultiFilter({
         type="button"
         onClick={openModal}
         className={cn(
-          "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
+          "h-10 inline-flex items-center gap-2 rounded-full border px-4 text-sm transition-colors cursor-pointer",
           isActive
             ? "border-foreground bg-foreground text-background hover:opacity-90"
-            : "border-input bg-background text-foreground hover:bg-muted",
+            : "border-foreground/30 bg-transparent text-foreground hover:bg-foreground hover:text-background hover:border-foreground",
         )}
       >
-        <span className={cn("opacity-70", isActive && "text-background/80")}>
-          Categoria:
+        <span className="opacity-70">Categoria:</span>
+        <span className="font-medium max-w-40 truncate">
+          {valueLabel ?? "Tutte"}
         </span>
-        <span className="font-medium max-w-32 truncate">{valueLabel ?? "Tutte"}</span>
         {isActive && (
           <span
             role="button"
@@ -262,13 +275,15 @@ function CategoryMultiFilter({
                 clearFromChip(e as unknown as React.MouseEvent);
               }
             }}
-            className="ml-0.5 -mr-1 p-0.5 rounded hover:bg-background/20 cursor-pointer"
+            className="-mr-1 ml-0.5 p-0.5 rounded hover:bg-foreground/10 cursor-pointer"
             aria-label="Rimuovi filtro"
           >
-            <X className="h-3 w-3" />
+            <X className="h-3.5 w-3.5" />
           </span>
         )}
-        {!isActive && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+        {!isActive && (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
       </button>
 
       {open && (

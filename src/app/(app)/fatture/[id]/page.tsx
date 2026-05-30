@@ -25,12 +25,36 @@ const STATUS_TONE: Record<string, "neutral" | "success" | "danger" | "primary"> 
   cancelled: "neutral",
 };
 
+const BACK_LINKS: Record<string, { href: string; label: string }> = {
+  "da-rivedere": { href: "/fatture/da-rivedere", label: "Torna a Da rivedere" },
+  "in-approvazione": {
+    href: "/fatture/in-approvazione",
+    label: "Torna a In approvazione",
+  },
+  estere: { href: "/fatture/estere", label: "Torna a Estere" },
+  carica: { href: "/fatture/carica", label: "Torna a Carica fatture" },
+};
+
 export default async function FatturaDettaglioPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string; back?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
+  // back: URL relativo preservato (deve iniziare con /fatture per sicurezza).
+  // Ha priorità sui BACK_LINKS fissi: serve a tornare all'esatto punto
+  // di partenza (es. /fatture?period=month&month=2026-05).
+  const safeBack =
+    sp.back && sp.back.startsWith("/fatture") ? sp.back : null;
+  const back = safeBack
+    ? { href: safeBack, label: "Torna indietro" }
+    : (BACK_LINKS[sp.from ?? ""] ?? {
+        href: "/fatture",
+        label: "Torna a Fatture",
+      });
   const invoice = await getInvoice(id);
   if (!invoice) notFound();
 
@@ -46,14 +70,14 @@ export default async function FatturaDettaglioPage({
   const taxable = vat !== null ? total - vat : null;
 
   return (
-    <div className="max-w-4xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <Link
-          href="/fatture"
+          href={back.href}
           className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
           <ArrowLeft className="h-3 w-3" />
-          Torna a Fatture
+          {back.label}
         </Link>
         <div className="flex items-start justify-between gap-4 mt-2">
           <div>

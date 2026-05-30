@@ -12,7 +12,7 @@ export default async function ImportaAiPage() {
   ]);
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <Link
           href="/importa"

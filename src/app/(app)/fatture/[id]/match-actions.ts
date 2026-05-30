@@ -4,8 +4,9 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { invoices } from "@/lib/db/schema";
+import { invoices, movements } from "@/lib/db/schema";
 import { createMatch, deleteMatch, getMatchedTotal } from "@/lib/db/queries/matches";
+import { learnAliasFromMatch } from "@/lib/db/queries/counterparty-aliases";
 
 const LinkSchema = z.object({
   invoiceId: z.string().uuid(),
@@ -60,6 +61,28 @@ export async function linkMovementAction(formData: FormData) {
   });
 
   await syncInvoiceStatus(parsed.data.invoiceId);
+
+  // Vendor learning: salva alias se utile
+  try {
+    const [pair] = await db
+      .select({
+        counterpartyName: invoices.counterpartyName,
+        description: movements.description,
+      })
+      .from(invoices)
+      .where(eq(invoices.id, parsed.data.invoiceId))
+      .leftJoin(movements, eq(movements.id, parsed.data.movementId))
+      .limit(1);
+    if (pair && pair.description) {
+      await learnAliasFromMatch({
+        counterpartyName: pair.counterpartyName,
+        movementDescription: pair.description,
+        source: "auto",
+      });
+    }
+  } catch {
+    // ignora
+  }
 
   revalidatePath(`/fatture/${parsed.data.invoiceId}`);
   revalidatePath("/fatture");

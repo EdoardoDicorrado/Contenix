@@ -10,9 +10,9 @@ import {
   CheckCircle2,
   Tag,
   ArrowLeftRight,
-  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AddButton } from "@/components/ui/add-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -64,11 +64,10 @@ export function NewRuleButton({
   return (
     <>
       <div ref={dropdownRef} className="relative">
-        <Button onClick={() => setDropdownOpen(!dropdownOpen)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Nuova regola
-          <ChevronDown className="h-3.5 w-3.5 -mr-1" />
-        </Button>
+        <AddButton
+          label="Nuova regola"
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+        />
         {dropdownOpen && (
           <div className="absolute right-0 mt-1 w-64 rounded-md border border-border bg-background shadow-lg z-40 p-1">
             <button
@@ -276,12 +275,12 @@ function CategoryRuleForm({
       </div>
 
       {result?.ok && (
-        <div className="flex items-center gap-2 text-xs text-green-900">
-          <CheckCircle2 className="h-3.5 w-3.5 text-green-700" /> Regola creata
+        <div className="flex items-center gap-2 text-xs text-success">
+          <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Regola creata
         </div>
       )}
       {result && !result.ok && (
-        <div className="flex items-center gap-2 text-xs text-red-900">
+        <div className="flex items-center gap-2 text-xs text-danger">
           <AlertCircle className="h-3.5 w-3.5" /> {result.msg}
         </div>
       )}
@@ -390,12 +389,12 @@ function TransferRuleForm({
       </div>
 
       {result?.ok && (
-        <div className="flex items-center gap-2 text-xs text-green-900">
-          <CheckCircle2 className="h-3.5 w-3.5 text-green-700" /> Regola creata
+        <div className="flex items-center gap-2 text-xs text-success">
+          <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Regola creata
         </div>
       )}
       {result && !result.ok && (
-        <div className="flex items-center gap-2 text-xs text-red-900">
+        <div className="flex items-center gap-2 text-xs text-danger">
           <AlertCircle className="h-3.5 w-3.5" /> {result.msg}
         </div>
       )}

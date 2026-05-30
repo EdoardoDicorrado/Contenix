@@ -59,7 +59,7 @@ export default async function DettaglioContoPage({
   const color = account.color ?? "#6b7280";
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <Link
           href="/conti"

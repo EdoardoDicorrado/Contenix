@@ -44,6 +44,8 @@ type Props = {
   mode?: "full" | "range-only";
   /** Etichetta del bottone (default: "Periodo"). */
   label?: string;
+  /** Variante visiva. Default "pill" (uniforme). "compact" h-8 rounded-md. */
+  variant?: "pill" | "compact";
 };
 
 export function PeriodFilter({
@@ -52,6 +54,7 @@ export function PeriodFilter({
   className,
   mode = "full",
   label = "Periodo",
+  variant = "pill",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<
@@ -104,15 +107,26 @@ export function PeriodFilter({
         type="button"
         onClick={handleButtonClick}
         className={cn(
-          "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-          !isDefault
-            ? "border-foreground bg-foreground text-background hover:opacity-90"
-            : "border-input bg-background text-foreground hover:bg-muted",
+          "inline-flex items-center gap-2 border transition-colors cursor-pointer",
+          variant === "compact"
+            ? "h-8 rounded-md px-2.5 text-xs " +
+                (!isDefault
+                  ? "border-foreground bg-foreground text-background hover:opacity-90"
+                  : "border-input bg-background text-foreground hover:bg-muted")
+            : "h-10 rounded-full px-4 text-sm " +
+                (!isDefault
+                  ? "border-foreground bg-foreground text-background hover:opacity-90"
+                  : "border-foreground/30 bg-transparent text-foreground hover:bg-foreground hover:text-background hover:border-foreground"),
         )}
       >
-        <Calendar className="h-3 w-3" />
+        <Calendar className={variant === "compact" ? "h-3 w-3" : "h-4 w-4"} />
         {!rangeOnly && (
-          <span className={cn("opacity-70", !isDefault && "text-background/80")}>
+          <span
+            className={cn(
+              "opacity-70",
+              variant === "compact" && !isDefault && "text-background/80",
+            )}
+          >
             {label}:
           </span>
         )}
@@ -128,13 +142,26 @@ export function PeriodFilter({
                 clear(e as unknown as React.MouseEvent);
               }
             }}
-            className="ml-0.5 -mr-1 p-0.5 rounded hover:bg-background/20 cursor-pointer"
+            className={cn(
+              "p-0.5 rounded cursor-pointer",
+              variant === "compact"
+                ? "ml-0.5 -mr-1 hover:bg-background/20"
+                : "-mr-1 ml-0.5 hover:bg-foreground/10",
+            )}
             aria-label="Rimuovi filtro"
           >
-            <X className="h-3 w-3" />
+            <X className={variant === "compact" ? "h-3 w-3" : "h-3.5 w-3.5"} />
           </span>
         )}
-        {isDefault && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+        {isDefault && (
+          <ChevronDown
+            className={
+              variant === "compact"
+                ? "h-3 w-3 text-muted-foreground"
+                : "h-3.5 w-3.5 text-muted-foreground"
+            }
+          />
+        )}
       </button>
 
       {open && (

@@ -2,28 +2,15 @@
 
 import { useState } from "react";
 import { Link2 } from "lucide-react";
-import { AbbinaMovimentoOverlay } from "../abbina-overlays";
+import { AbbinaPickerOverlay } from "./abbina-picker-overlay";
+import type { PickerInvoice } from "../movement-picker-overlay";
 
 /**
- * Bottone "Abbina" della riga su /fatture/da-rivedere. Apre l'overlay che
- * permette di cercare un movimento manualmente o selezionarne uno tra i
- * suggerimenti automatici.
+ * Bottone "Abbina" della riga su /fatture/da-rivedere. Apre il picker
+ * stile "Riabbina" che mostra fattura a sinistra e movimenti suggeriti
+ * con score a destra.
  */
-export function AbbinaButton({
-  invoiceId,
-  invoiceNumber,
-  invoiceType,
-  counterparty,
-  totalAmount,
-  remainingAmount,
-}: {
-  invoiceId: string;
-  invoiceNumber: string;
-  invoiceType: "sale" | "purchase";
-  counterparty: string;
-  totalAmount: string;
-  remainingAmount: number;
-}) {
+export function AbbinaButton({ invoice }: { invoice: PickerInvoice }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -37,15 +24,7 @@ export function AbbinaButton({
         Abbina
       </button>
       {open && (
-        <AbbinaMovimentoOverlay
-          invoiceId={invoiceId}
-          invoiceNumber={invoiceNumber}
-          invoiceType={invoiceType}
-          counterparty={counterparty}
-          totalAmount={totalAmount}
-          remainingAmount={remainingAmount}
-          onClose={() => setOpen(false)}
-        />
+        <AbbinaPickerOverlay invoice={invoice} onClose={() => setOpen(false)} />
       )}
     </>
   );

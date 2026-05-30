@@ -91,7 +91,7 @@ export function ImportStoricoClient() {
   const [ruleDecisions, setRuleDecisions] = useState<RuleDecision[]>([]);
 
   const [importResult, setImportResult] = useState<
-    | { ok: true; insertedMovements: number; createdCategories: number; createdRules: number; skippedRows: number }
+    | { ok: true; insertedMovements: number; skippedMovements: number; createdCategories: number; createdRules: number; skippedRows: number }
     | { ok: false; error: string }
     | null
   >(null);
@@ -284,7 +284,7 @@ function Stepper({ currentStep }: { currentStep: Step }) {
                 isActive
                   ? "bg-blue-600 text-white border-blue-600"
                   : isDone
-                    ? "bg-green-600 text-white border-green-600"
+                    ? "bg-success text-white border-success"
                     : "bg-background border-border"
               }`}
             >
@@ -352,7 +352,7 @@ function UploadStep({
       </div>
 
       {analyzeResult && !analyzeResult.ok && (
-        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
           <div>{analyzeResult.error}</div>
         </div>
@@ -449,7 +449,7 @@ function CategoriesStep({
           <div className="text-xs text-muted-foreground flex items-center gap-3">
             {mergeCount > 0 && (
               <span>
-                <span className="text-green-700 font-medium">{mergeCount}</span> fusioni
+                <span className="text-success font-medium">{mergeCount}</span> fusioni
                 proposte
               </span>
             )}
@@ -690,7 +690,7 @@ function ReliabilityBadge({ value }: { value: number }) {
   const pct = Math.round(value * 100);
   const color =
     pct >= 95
-      ? "bg-green-100 text-green-800 border-green-200"
+      ? "bg-success/15 text-success border-success/30"
       : pct >= 80
         ? "bg-blue-50 text-blue-800 border-blue-200"
         : "bg-amber-50 text-amber-800 border-amber-200";
@@ -782,7 +782,7 @@ function ConfirmStep({
   accountId: string;
   accounts: AnalyzeOk["accounts"];
   importResult:
-    | { ok: true; insertedMovements: number; createdCategories: number; createdRules: number; skippedRows: number }
+    | { ok: true; insertedMovements: number; skippedMovements: number; createdCategories: number; createdRules: number; skippedRows: number }
     | { ok: false; error: string }
     | null;
   confirming: boolean;
@@ -793,13 +793,14 @@ function ConfirmStep({
 
   if (importResult?.ok) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50 p-6 flex flex-col gap-3">
-        <div className="flex items-center gap-2 text-green-900 font-medium">
+      <div className="rounded-lg border border-success/30 bg-success/10 p-6 flex flex-col gap-3">
+        <div className="flex items-center gap-2 text-success font-medium">
           <CheckCircle2 className="h-5 w-5" />
           Import completato
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm text-green-900">
+        <div className="grid grid-cols-2 gap-2 text-sm text-success">
           <StatRow label="Movimenti importati" value={importResult.insertedMovements} />
+          <StatRow label="Duplicati saltati" value={importResult.skippedMovements} />
           <StatRow label="Categorie create" value={importResult.createdCategories} />
           <StatRow label="Regole create" value={importResult.createdRules} />
           <StatRow label="Righe escluse" value={importResult.skippedRows} />
@@ -862,7 +863,7 @@ function ConfirmStep({
       </div>
 
       {importResult && !importResult.ok && (
-        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
           <div>{importResult.error}</div>
         </div>

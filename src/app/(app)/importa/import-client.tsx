@@ -74,7 +74,7 @@ export function ImportClient({
   const [defaultIncomeCat, setDefaultIncomeCat] = useState("");
   const [defaultExpenseCat, setDefaultExpenseCat] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ inserted: number } | null>(null);
+  const [result, setResult] = useState<{ inserted: number; skipped: number } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const transformed = useMemo(() => {
@@ -179,7 +179,7 @@ export function ImportClient({
     startTransition(async () => {
       const res = await importMovementsAction(payload);
       if (res.ok) {
-        setResult({ inserted: res.inserted });
+        setResult({ inserted: res.inserted, skipped: res.skipped ?? 0 });
       } else {
         setSubmitError(res.error);
       }
@@ -193,6 +193,14 @@ export function ImportClient({
         <h3 className="text-base font-semibold mt-3">Import completato</h3>
         <p className="text-sm text-muted-foreground mt-1">
           {result.inserted} movimenti aggiunti correttamente
+          {result.skipped > 0 && (
+            <>
+              {" · "}
+              <span className="text-foreground font-medium">
+                {result.skipped} duplicati saltati
+              </span>
+            </>
+          )}
         </p>
         <div className="flex items-center gap-2 mt-5">
           <Button onClick={() => router.push("/movimenti")}>Vai ai movimenti</Button>

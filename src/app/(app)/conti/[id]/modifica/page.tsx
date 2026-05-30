@@ -14,7 +14,7 @@ export default async function ModificaContoPage({
   if (!account) notFound();
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <Link
           href={`/conti/${id}`}

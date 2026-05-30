@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeftRight, Loader2, X, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -52,9 +53,10 @@ export function TransferInlineButton({
       fd.append("movementId", movementId);
       const res = await unmarkAsTransferAction(fd);
       if (res.ok) {
+        toast.success("Trasferimento annullato");
         router.refresh();
       } else {
-        alert(res.error);
+        toast.error(res.error);
       }
     });
   }
@@ -66,6 +68,7 @@ export function TransferInlineButton({
       const res = await markAsTransferAction(formData);
       if (res.ok) {
         setOpen(false);
+        toast.success("Movimento marcato come trasferimento");
         router.refresh();
       } else {
         setError(res.error);

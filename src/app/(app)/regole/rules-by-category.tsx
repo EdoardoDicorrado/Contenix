@@ -441,7 +441,7 @@ function RuleRow({
               type="button"
               onClick={handleDelete}
               disabled={busy}
-              className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50"
+              className="p-1 rounded text-muted-foreground hover:text-danger hover:bg-danger/10"
               title="Elimina regola"
             >
               {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}

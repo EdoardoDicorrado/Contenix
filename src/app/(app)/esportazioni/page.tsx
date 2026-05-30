@@ -3,7 +3,7 @@ import { ExportClient } from "./export-client";
 
 export default function EsportazioniPage() {
   return (
-    <div className="max-w-4xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Esportazioni</h2>
         <p className="text-sm text-muted-foreground mt-1">

@@ -8,6 +8,7 @@ import {
   type InvoiceForMatch,
   type MovementForMatch,
 } from "@/lib/invoice-matching";
+import { getAliasesFor, getAliasesMap } from "./counterparty-aliases";
 
 export type LinkedMatch = {
   id: string;
@@ -99,6 +100,8 @@ export async function suggestMatches(invoiceId: string) {
         // Esclude trasferimenti banca ↔ conto secondario: non sono pagamenti
         // di fatture, sono solo movimentazione interna di liquidità.
         eq(movements.isTransfer, false),
+        // Esclude movimenti marcati "non abbinabili" (commissioni, IVA, ecc.)
+        eq(movements.matchUnavailable, false),
         gte(movements.date, startDate),
         lte(movements.date, endDate),
       ),
@@ -113,9 +116,17 @@ export async function suggestMatches(invoiceId: string) {
     counterpartyName: inv.counterpartyName,
     issueDate: inv.issueDate,
     totalAmount: inv.totalAmount,
+    paymentIban: inv.paymentIban,
+    counterpartyVat: inv.counterpartyVat,
   };
 
-  return rankMatches(invoiceForMatch, available, { minScore: 30, limit: 5 });
+  const aliases = await getAliasesFor(inv.counterpartyName);
+
+  return rankMatches(invoiceForMatch, available, {
+    minScore: 30,
+    limit: 5,
+    aliases,
+  });
 }
 
 export async function createMatch(opts: {
@@ -141,13 +152,64 @@ export async function deleteMatch(id: string) {
 }
 
 export async function getMatchedTotal(invoiceId: string): Promise<number> {
+  // Conta SOLO i match approvati: i 'pending' (auto in attesa di approvazione)
+  // non incidono né su stato fattura né sui totali.
   const [row] = await db
     .select({
       total: sql<string>`COALESCE(SUM(${invoiceMovements.matchedAmount}), 0)`,
     })
     .from(invoiceMovements)
-    .where(eq(invoiceMovements.invoiceId, invoiceId));
+    .where(
+      and(
+        eq(invoiceMovements.invoiceId, invoiceId),
+        eq(invoiceMovements.approvalStatus, "approved"),
+      ),
+    );
   return parseFloat(row?.total ?? "0");
+}
+
+/**
+ * Quanto del movimento è già allocato a fatture (somma di tutti i
+ * `matchedAmount` dei suoi link). Serve per capire se è disponibile a coprire
+ * ancora altre fatture (caso pagamento aggregato 1 movimento → N fatture).
+ *
+ * `residual` = |movement.amount| − allocatedAmount, clampato a ≥ 0.
+ * `fullyAllocated` = residual quasi-zero (< 0.005 per tolleranza float).
+ */
+export async function getMovementAllocation(movementId: string): Promise<{
+  movementAmount: number;
+  allocatedAmount: number;
+  residual: number;
+  fullyAllocated: boolean;
+} | null> {
+  const [mov] = await db
+    .select({ amount: movements.amount })
+    .from(movements)
+    .where(eq(movements.id, movementId))
+    .limit(1);
+  if (!mov) return null;
+
+  const [row] = await db
+    .select({
+      total: sql<string>`COALESCE(SUM(${invoiceMovements.matchedAmount}), 0)`,
+    })
+    .from(invoiceMovements)
+    .where(
+      and(
+        eq(invoiceMovements.movementId, movementId),
+        eq(invoiceMovements.approvalStatus, "approved"),
+      ),
+    );
+
+  const movementAmount = Math.abs(parseFloat(mov.amount));
+  const allocatedAmount = parseFloat(row?.total ?? "0");
+  const residual = Math.max(0, movementAmount - allocatedAmount);
+  return {
+    movementAmount,
+    allocatedAmount,
+    residual,
+    fullyAllocated: residual < 0.005,
+  };
 }
 
 // =============================================================================
@@ -161,6 +223,15 @@ export type SearchMovementResult = {
   type: "income" | "expense";
   description: string;
   alreadyLinked: boolean;
+  /** Quanto già allocato a fatture (somma matched_amount). */
+  allocatedAmount: string;
+  /** Residuo disponibile = |amount| − allocated. */
+  residual: string;
+  /** Movimento già pienamente allocato → non riutilizzabile. */
+  fullyAllocated: boolean;
+  /** Score di matching con la fattura sorgente (0-100). Presente solo
+   *  se l'action è chiamata con `withScores: true`. */
+  score?: number;
 };
 
 /**
@@ -172,16 +243,27 @@ export type SearchMovementResult = {
 export async function searchMovementsForMatch(opts: {
   invoiceId: string;
   query?: string;
+  /** Finestra temporale; se forniti, prevalgono su year/month. */
+  from?: Date;
+  to?: Date;
   year?: number;
   month?: number;
   type?: "income" | "expense";
+  amountMin?: number;
+  amountMax?: number;
   limit?: number;
 }): Promise<SearchMovementResult[]> {
-  const conds: SQL[] = [eq(movements.isTransfer, false)];
+  const conds: SQL[] = [
+    eq(movements.isTransfer, false),
+    eq(movements.matchUnavailable, false),
+  ];
   if (opts.query && opts.query.trim().length > 0) {
     conds.push(ilike(movements.description, `%${opts.query.trim()}%`));
   }
-  if (opts.year != null && opts.month != null) {
+  if (opts.from || opts.to) {
+    if (opts.from) conds.push(gte(movements.date, opts.from));
+    if (opts.to) conds.push(lt(movements.date, opts.to));
+  } else if (opts.year != null && opts.month != null) {
     const start = new Date(Date.UTC(opts.year, opts.month - 1, 1));
     const end = new Date(Date.UTC(opts.year, opts.month, 1));
     conds.push(gte(movements.date, start));
@@ -193,6 +275,12 @@ export async function searchMovementsForMatch(opts: {
     conds.push(lt(movements.date, end));
   }
   if (opts.type) conds.push(eq(movements.type, opts.type));
+  if (opts.amountMin != null) {
+    conds.push(sql`ABS(${movements.amount}::numeric) >= ${opts.amountMin}`);
+  }
+  if (opts.amountMax != null) {
+    conds.push(sql`ABS(${movements.amount}::numeric) <= ${opts.amountMax}`);
+  }
 
   const rows = await db
     .select({
@@ -205,21 +293,35 @@ export async function searchMovementsForMatch(opts: {
         SELECT COUNT(*)::int FROM ${invoiceMovements} im
         WHERE im.movement_id = ${movements.id}
           AND im.invoice_id <> ${opts.invoiceId}
+          AND im.approval_status = 'approved'
       )`,
+      allocated: sql<string>`COALESCE((
+        SELECT SUM(im.matched_amount) FROM ${invoiceMovements} im
+        WHERE im.movement_id = ${movements.id}
+          AND im.approval_status = 'approved'
+      ), 0)::text`,
     })
     .from(movements)
     .where(and(...conds))
     .orderBy(desc(movements.date))
     .limit(opts.limit ?? 50);
 
-  return rows.map((r) => ({
-    id: r.id,
-    date: r.date,
-    amount: r.amount,
-    type: r.type,
-    description: r.description,
-    alreadyLinked: r.linkedCount > 0,
-  }));
+  return rows.map((r) => {
+    const abs = Math.abs(parseFloat(r.amount));
+    const allocated = parseFloat(r.allocated);
+    const residual = Math.max(0, abs - allocated);
+    return {
+      id: r.id,
+      date: r.date,
+      amount: r.amount,
+      type: r.type,
+      description: r.description,
+      alreadyLinked: r.linkedCount > 0,
+      allocatedAmount: allocated.toFixed(2),
+      residual: residual.toFixed(2),
+      fullyAllocated: residual < 0.005,
+    };
+  });
 }
 
 export type SearchInvoiceResult = {
@@ -231,7 +333,12 @@ export type SearchInvoiceResult = {
   issueDate: Date;
   totalAmount: string;
   matchedAmount: string;
+  /** Quanto manca per chiudere la fattura: totalAmount − matchedAmount. */
+  remainingAmount: string;
   fullyMatched: boolean;
+  /** Score di matching con il movimento sorgente (0-100). Presente solo
+   *  se l'action è chiamata con `withScores: true`. */
+  score?: number;
 };
 
 /**
@@ -241,15 +348,20 @@ export type SearchInvoiceResult = {
 export async function searchInvoicesForMatch(opts: {
   movementId: string;
   query?: string;
+  from?: Date;
+  to?: Date;
   year?: number;
   month?: number;
   type?: "sale" | "purchase";
+  amountMin?: number;
+  amountMax?: number;
   limit?: number;
 }): Promise<SearchInvoiceResult[]> {
   const matchedTotalSql = sql<string>`COALESCE((
     SELECT SUM(${invoiceMovements.matchedAmount})
     FROM ${invoiceMovements}
     WHERE ${invoiceMovements.invoiceId} = ${invoices.id}
+      AND ${invoiceMovements.approvalStatus} = 'approved'
   ), 0)`;
 
   const conds: SQL[] = [ne(invoices.status, "cancelled")];
@@ -261,7 +373,10 @@ export async function searchInvoicesForMatch(opts: {
     );
     if (orCond) conds.push(orCond);
   }
-  if (opts.year != null && opts.month != null) {
+  if (opts.from || opts.to) {
+    if (opts.from) conds.push(gte(invoices.issueDate, opts.from));
+    if (opts.to) conds.push(lt(invoices.issueDate, opts.to));
+  } else if (opts.year != null && opts.month != null) {
     const start = new Date(Date.UTC(opts.year, opts.month - 1, 1));
     const end = new Date(Date.UTC(opts.year, opts.month, 1));
     conds.push(gte(invoices.issueDate, start));
@@ -273,6 +388,12 @@ export async function searchInvoicesForMatch(opts: {
     conds.push(lt(invoices.issueDate, end));
   }
   if (opts.type) conds.push(eq(invoices.type, opts.type));
+  if (opts.amountMin != null) {
+    conds.push(sql`${invoices.totalAmount}::numeric >= ${opts.amountMin}`);
+  }
+  if (opts.amountMax != null) {
+    conds.push(sql`${invoices.totalAmount}::numeric <= ${opts.amountMax}`);
+  }
 
   // Esclude fatture già linkate a questo specifico movimento (sarebbero duplicati)
   conds.push(sql`NOT EXISTS (
@@ -296,17 +417,23 @@ export async function searchInvoicesForMatch(opts: {
     .orderBy(desc(invoices.issueDate))
     .limit(opts.limit ?? 50);
 
-  return rows.map((r) => ({
-    id: r.id,
-    number: r.number,
-    type: r.type,
-    counterpartyName: r.counterpartyName,
-    counterpartyVat: r.counterpartyVat,
-    issueDate: r.issueDate,
-    totalAmount: r.totalAmount,
-    matchedAmount: r.matchedAmount,
-    fullyMatched: parseFloat(r.matchedAmount) >= parseFloat(r.totalAmount) - 0.005,
-  }));
+  return rows.map((r) => {
+    const total = parseFloat(r.totalAmount);
+    const matched = parseFloat(r.matchedAmount);
+    const remaining = Math.max(0, total - matched);
+    return {
+      id: r.id,
+      number: r.number,
+      type: r.type,
+      counterpartyName: r.counterpartyName,
+      counterpartyVat: r.counterpartyVat,
+      issueDate: r.issueDate,
+      totalAmount: r.totalAmount,
+      matchedAmount: r.matchedAmount,
+      remainingAmount: remaining.toFixed(2),
+      fullyMatched: remaining < 0.005,
+    };
+  });
 }
 
 /**
@@ -334,6 +461,7 @@ export async function suggestInvoicesForMovement(movementId: string) {
     SELECT SUM(${invoiceMovements.matchedAmount})
     FROM ${invoiceMovements}
     WHERE ${invoiceMovements.invoiceId} = ${invoices.id}
+      AND ${invoiceMovements.approvalStatus} = 'approved'
   ), 0)`;
 
   const candidates = await db
@@ -342,8 +470,10 @@ export async function suggestInvoicesForMovement(movementId: string) {
       number: invoices.number,
       type: invoices.type,
       counterpartyName: invoices.counterpartyName,
+      counterpartyVat: invoices.counterpartyVat,
       issueDate: invoices.issueDate,
       totalAmount: invoices.totalAmount,
+      paymentIban: invoices.paymentIban,
       matchedTotal: matchedTotalSql,
     })
     .from(invoices)
@@ -371,6 +501,9 @@ export async function suggestInvoicesForMovement(movementId: string) {
     description: mov.description,
   };
 
+  // Batch-load alias per tutte le controparti candidate (no N+1)
+  const aliasesMap = await getAliasesMap(candidates.map((c) => c.counterpartyName));
+
   const scored = candidates
     .map((c) => {
       const inv: InvoiceForMatch = {
@@ -380,8 +513,11 @@ export async function suggestInvoicesForMovement(movementId: string) {
         counterpartyName: c.counterpartyName,
         issueDate: c.issueDate,
         totalAmount: c.totalAmount,
+        paymentIban: c.paymentIban,
+        counterpartyVat: c.counterpartyVat,
       };
-      const score = scoreMatch(inv, movForScoring);
+      const aliases = aliasesMap.get(c.counterpartyName) ?? [];
+      const score = scoreMatch(inv, movForScoring, aliases);
       return { invoice: c, score };
     })
     .filter((s) => s.score.score >= 30)

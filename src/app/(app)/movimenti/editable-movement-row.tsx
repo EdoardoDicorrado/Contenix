@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Trash2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CategoryOption } from "@/components/ui/category-combo";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -27,6 +27,7 @@ export type EditableMovement = {
   amount: string;
   type: "income" | "expense";
   description: string;
+  descriptionClean: string | null;
   categoryId: string | null;
   categoryName: string | null;
   categoryColor: string | null;
@@ -36,6 +37,7 @@ export type EditableMovement = {
   accountColor: string | null;
   isTransfer: boolean;
   transferToAccountId: string | null;
+  matchUnavailable: boolean;
   matchedInvoiceId: string | null;
   matchedInvoiceNumber: string | null;
   matchedInvoiceCounterparty: string | null;
@@ -101,7 +103,12 @@ export function EditableMovementRow({
             <span className="text-muted-foreground">—</span>
           )}
         </td>
-        <td className="px-4 py-3 text-foreground">{movement.description}</td>
+        <td className="px-4 py-3 text-foreground">
+          <DescriptionCell
+            description={movement.description}
+            descriptionClean={movement.descriptionClean}
+          />
+        </td>
         <td className="px-4 py-3" onClick={stop}>
           <InlineCategoryEditor
             movementId={movement.id}
@@ -119,6 +126,7 @@ export function EditableMovementRow({
             movementDescription={movement.description}
             movementAmount={movement.amount}
             movementType={movement.type}
+            matchUnavailable={movement.matchUnavailable}
             primaryInvoiceId={movement.matchedInvoiceId}
             primaryInvoiceNumber={movement.matchedInvoiceNumber}
             primaryInvoiceCounterparty={movement.matchedInvoiceCounterparty}
@@ -186,5 +194,49 @@ export function EditableMovementRow({
         />
       )}
     </>
+  );
+}
+
+/**
+ * Cella descrizione: mostra `descriptionClean` se presente, altrimenti
+ * `description`. Se diversi (clean popolato), mostra icona ⓘ che al click
+ * espande l'originale completa inline (per audit / recupero info).
+ */
+function DescriptionCell({
+  description,
+  descriptionClean,
+}: {
+  description: string;
+  descriptionClean: string | null;
+}) {
+  const [showOriginal, setShowOriginal] = useState(false);
+  const hasClean = !!descriptionClean && descriptionClean !== description;
+  const display = hasClean ? descriptionClean : description;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-start gap-1.5">
+        <span className="break-words">{display}</span>
+        {hasClean && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowOriginal((v) => !v);
+            }}
+            className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
+            title={showOriginal ? "Nascondi originale" : "Mostra descrizione originale"}
+            aria-label={showOriginal ? "Nascondi originale" : "Mostra originale"}
+          >
+            <Info className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      {showOriginal && hasClean && (
+        <div className="text-[11px] text-muted-foreground bg-muted/40 rounded px-2 py-1 break-words whitespace-pre-wrap">
+          {description}
+        </div>
+      )}
+    </div>
   );
 }

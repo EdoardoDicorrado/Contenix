@@ -8,6 +8,7 @@ import {
   type InvoiceForMatch,
   type MovementForMatch,
 } from "@/lib/invoice-matching";
+import { getAliasesMap } from "./counterparty-aliases";
 
 const WINDOW_DAYS = 90;
 /**
@@ -15,6 +16,12 @@ const WINDOW_DAYS = 90;
  * l'auto-match sicuro. Sotto questa soglia → ambiguità, l'utente decide.
  */
 const SAFETY_GAP = 10;
+/** Window per il match aggregato (1 movimento → N fatture). */
+const AGGREGATE_WINDOW_DAYS = 60;
+/** Numero massimo di fatture nel subset aggregato (esplosione esponenziale). */
+const AGGREGATE_MAX_INVOICES = 10;
+/** Importo minimo del movimento candidato all'aggregato (filtra le commissioni). */
+const AGGREGATE_MIN_AMOUNT_CENTS = 5000; // 50€
 
 export type ApplyInvoiceMatchesGroupExample = {
   invoiceId: string;
@@ -36,6 +43,8 @@ export type ApplyInvoiceMatchesResult = {
   needsReview: number;
   /** Fatture senza alcun candidato sopra soglia. */
   noCandidate: number;
+  /** Match aggregati creati (1 movimento → N fatture stesso fornitore). */
+  aggregateMatched: number;
   /** Esempi (max 30) dei match creati per il report. */
   examples: ApplyInvoiceMatchesGroupExample[];
 };
@@ -61,6 +70,7 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
     SELECT SUM(${invoiceMovements.matchedAmount})
     FROM ${invoiceMovements}
     WHERE ${invoiceMovements.invoiceId} = ${invoices.id}
+      AND ${invoiceMovements.approvalStatus} = 'approved'
   ), 0)`;
 
   const candidates = await db
@@ -69,8 +79,10 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
       number: invoices.number,
       type: invoices.type,
       counterpartyName: invoices.counterpartyName,
+      counterpartyVat: invoices.counterpartyVat,
       issueDate: invoices.issueDate,
       totalAmount: invoices.totalAmount,
+      paymentIban: invoices.paymentIban,
       matchedTotal: matchedTotalsSub,
     })
     .from(invoices)
@@ -87,6 +99,7 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
       autoMatched: 0,
       needsReview: 0,
       noCandidate: 0,
+      aggregateMatched: 0,
       examples: [],
     };
   }
@@ -124,6 +137,7 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
         gte(movements.date, startWindow),
         lte(movements.date, endWindow),
         eq(movements.isTransfer, false),
+        eq(movements.matchUnavailable, false),
       ),
     );
 
@@ -135,11 +149,20 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
     .filter((m) => m.type === "expense" && !linkedIds.has(m.id))
     .map((m) => ({ id: m.id, date: m.date, amount: m.amount, type: m.type, description: m.description }));
 
+  // Batch-load aliases per tutte le controparti candidate (no N+1)
+  const aliasesMap = await getAliasesMap(
+    candidates.map((c) => c.counterpartyName),
+  );
+
+  // Tieni traccia delle fatture matched in fase 1:1 (per fase aggregato)
+  const matchedInvoiceIds = new Set<string>();
+
   // 4) Per ogni fattura, ranking + decisione
   const examples: ApplyInvoiceMatchesGroupExample[] = [];
   let autoMatched = 0;
   let needsReview = 0;
   let noCandidate = 0;
+  let aggregateMatched = 0;
 
   // I match auto-creati nel corso del run vanno ricordati per evitare di
   // riusare lo stesso movimento per due fatture nello stesso batch.
@@ -167,9 +190,16 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
       counterpartyName: c.counterpartyName,
       issueDate: c.issueDate,
       totalAmount: c.totalAmount,
+      paymentIban: c.paymentIban,
+      counterpartyVat: c.counterpartyVat,
     };
 
-    const ranked = rankMatches(invForMatch, localPool, { minScore: 30, limit: 3 });
+    const aliases = aliasesMap.get(c.counterpartyName) ?? [];
+    const ranked = rankMatches(invForMatch, localPool, {
+      minScore: 30,
+      limit: 3,
+      aliases,
+    });
 
     if (ranked.length === 0) {
       noCandidate += 1;
@@ -184,21 +214,29 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
     const isAutoSafe =
       topClass === "certain" && top.directionOk && gap >= SAFETY_GAP;
 
-    if (!isAutoSafe) {
+    // Persistiamo come "pending" sia il top "certain" sia il top "probable"
+    // (score 70-89 con gap≥5 dal secondo). Entrambi finiscono in
+    // /fatture/in-approvazione e l'utente li approva in batch. Senza questa
+    // estensione, la sezione "probabili pronti" di /fatture/da-rivedere
+    // doveva ricalcolare 100 suggestMatches live per ogni caricamento.
+    const isProbableSafe =
+      topClass === "probable" && top.directionOk && gap >= 5;
+
+    if (!isAutoSafe && !isProbableSafe) {
       needsReview += 1;
       continue;
     }
 
-    // Crea match. matchedAmount = totale fattura (assumiamo pagamento intero
-    // visto che lo score "certain" tipicamente implica importo esatto / quasi).
     await db.insert(invoiceMovements).values({
       invoiceId: c.id,
       movementId: top.movement.id,
       matchedAmount: c.totalAmount,
       matchType: "auto",
+      approvalStatus: "pending",
     });
 
     reservedInRun.add(top.movement.id);
+    matchedInvoiceIds.add(c.id);
     autoMatched += 1;
 
     if (examples.length < 30) {
@@ -215,11 +253,193 @@ export async function applyInvoiceMatches(): Promise<ApplyInvoiceMatchesResult> 
     }
   }
 
+  // 5) FASE AGGREGATO: 1 movimento → N fatture stesso fornitore.
+  //    Per ogni movimento rimasto, cerca un subset unico di fatture aperte
+  //    dello stesso fornitore che sommi al centesimo all'importo del movimento.
+  const aggregateRes = await runAggregateMatchPhase({
+    candidates,
+    matchedInvoiceIds,
+    allMovs,
+    reservedInRun,
+  });
+  aggregateMatched = aggregateRes.created;
+  // Le fatture che ora sono state aggregate vanno tolte da needsReview
+  needsReview = Math.max(0, needsReview - aggregateRes.invoicesCovered);
+  examples.push(...aggregateRes.examples);
+
   return {
     totalScanned: candidates.length,
     autoMatched,
     needsReview,
     noCandidate,
+    aggregateMatched,
     examples,
   };
+}
+
+// =============================================================================
+// FASE AGGREGATO — subset sum N fatture stesso fornitore = 1 movimento
+// =============================================================================
+
+type CandidateInvoice = {
+  id: string;
+  number: string;
+  type: "sale" | "purchase";
+  counterpartyName: string;
+  counterpartyVat: string | null;
+  issueDate: Date;
+  totalAmount: string;
+  paymentIban: string | null;
+};
+
+type CandidateMovement = {
+  id: string;
+  date: Date;
+  amount: string;
+  type: "income" | "expense";
+  description: string;
+};
+
+async function runAggregateMatchPhase(opts: {
+  candidates: CandidateInvoice[];
+  matchedInvoiceIds: Set<string>;
+  allMovs: CandidateMovement[];
+  reservedInRun: Set<string>;
+}): Promise<{
+  created: number;
+  invoicesCovered: number;
+  examples: ApplyInvoiceMatchesGroupExample[];
+}> {
+  // Fatture ancora aperte: non già matchate in fase 1:1 E non già pienamente
+  // matchate da before (matchedTotal = 0 nei candidates, già filtrato a monte).
+  const unmatchedInvoices = opts.candidates.filter(
+    (c) => !opts.matchedInvoiceIds.has(c.id),
+  );
+  if (unmatchedInvoices.length === 0) return { created: 0, invoicesCovered: 0, examples: [] };
+
+  // Movimenti ancora disponibili
+  const freeMovs = opts.allMovs.filter((m) => !opts.reservedInRun.has(m.id));
+  if (freeMovs.length === 0) return { created: 0, invoicesCovered: 0, examples: [] };
+
+  const examples: ApplyInvoiceMatchesGroupExample[] = [];
+  let created = 0;
+  let invoicesCovered = 0;
+
+  for (const mov of freeMovs) {
+    const movCents = toCents(mov.amount);
+    if (movCents < AGGREGATE_MIN_AMOUNT_CENTS) continue;
+
+    const expectedType: "sale" | "purchase" =
+      mov.type === "income" ? "sale" : "purchase";
+
+    // Filtro: fatture stesso tipo + finestra temporale stretta + counterparty
+    // nel testo del movimento (full/partial/token — usiamo il nome canonico).
+    const movWindowStart = new Date(mov.date);
+    movWindowStart.setUTCDate(movWindowStart.getUTCDate() - AGGREGATE_WINDOW_DAYS);
+    const movWindowEnd = new Date(mov.date);
+    movWindowEnd.setUTCDate(movWindowEnd.getUTCDate() + AGGREGATE_WINDOW_DAYS);
+
+    const sameVendorPool = unmatchedInvoices.filter(
+      (inv) =>
+        inv.type === expectedType &&
+        inv.issueDate >= movWindowStart &&
+        inv.issueDate <= movWindowEnd &&
+        descMentionsCounterparty(mov.description, inv.counterpartyName),
+    );
+
+    if (sameVendorPool.length < 2) continue; // serve almeno 2 fatture per parlare di aggregato
+    if (sameVendorPool.length > AGGREGATE_MAX_INVOICES) continue; // troppi → skip per safety
+
+    const items = sameVendorPool.map((i) => toCents(i.totalAmount));
+    const subset = findUniqueSubset(movCents, items);
+    if (!subset || subset.length < 2) continue;
+
+    // Creazione match aggregato — pending, va in /fatture/in-approvazione come
+    // gli altri auto-match. L'utente vede il gruppo e può approvarlo in blocco.
+    for (const idx of subset) {
+      const inv = sameVendorPool[idx];
+      await db.insert(invoiceMovements).values({
+        invoiceId: inv.id,
+        movementId: mov.id,
+        matchedAmount: inv.totalAmount,
+        matchType: "auto",
+        approvalStatus: "pending",
+      });
+      created += 1;
+      invoicesCovered += 1;
+      opts.matchedInvoiceIds.add(inv.id);
+      if (examples.length < 30) {
+        examples.push({
+          invoiceId: inv.id,
+          invoiceNumber: inv.number,
+          counterparty: inv.counterpartyName,
+          totalAmount: inv.totalAmount,
+          movementId: mov.id,
+          movementDate: mov.date,
+          movementDescription: mov.description,
+          score: 100, // match aggregato univoco
+        });
+      }
+    }
+    opts.reservedInRun.add(mov.id);
+  }
+
+  return { created, invoicesCovered, examples };
+}
+
+function toCents(amount: string): number {
+  return Math.round(parseFloat(amount) * 100);
+}
+
+/**
+ * Cerca se la descrizione del movimento contiene il nome canonico della
+ * controparte (lowercase + suffissi rimossi). Filtro veloce per evitare
+ * subset sum su pool grosso.
+ */
+function descMentionsCounterparty(desc: string, name: string): boolean {
+  const d = desc.toLowerCase();
+  const n = name
+    .toLowerCase()
+    .replace(/[.,/\\]/g, " ")
+    .replace(
+      /\b(srl|spa|sas|snc|bv|gmbh|ltd|llc|ag|sa|sl|sarl|inc|corp)\b/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!n) return false;
+  if (d.includes(n)) return true;
+  // Almeno il primo token significativo del nome
+  const firstToken = n.split(/\s+/).find((t) => t.length >= 3);
+  return firstToken ? d.includes(firstToken) : false;
+}
+
+/**
+ * Subset sum esatto su importi in centesimi.
+ *  - Restituisce gli INDICI dell'unico subset valido
+ *  - null se ci sono 0 o ≥ 2 subset (ambiguità → skip)
+ *  - Early-exit appena trovato il secondo subset (no esplosione)
+ */
+function findUniqueSubset(target: number, items: number[]): number[] | null {
+  const found: number[][] = [];
+  const picked: number[] = [];
+
+  function backtrack(idx: number, remaining: number) {
+    if (found.length > 1) return; // ambiguità → stop
+    if (remaining === 0 && picked.length > 0) {
+      found.push([...picked]);
+      return;
+    }
+    if (idx >= items.length || remaining < 0) return;
+    // Skip
+    backtrack(idx + 1, remaining);
+    if (found.length > 1) return;
+    // Include
+    picked.push(idx);
+    backtrack(idx + 1, remaining - items[idx]);
+    picked.pop();
+  }
+
+  backtrack(0, target);
+  return found.length === 1 ? found[0] : null;
 }

@@ -175,8 +175,8 @@ function ClusterCard({
 
       <div className="border-t border-border bg-muted/30 p-3 flex flex-col gap-2.5">
         {result ? (
-          <div className="flex items-center gap-2 text-sm text-green-900">
-            <CheckCircle2 className="h-4 w-4 text-green-700" />
+          <div className="flex items-center gap-2 text-sm text-success">
+            <CheckCircle2 className="h-4 w-4 text-success" />
             {result}
           </div>
         ) : (
@@ -223,7 +223,7 @@ function ClusterCard({
             )}
 
             {error && (
-              <div className="flex items-center gap-2 text-xs text-red-900">
+              <div className="flex items-center gap-2 text-xs text-danger">
                 <AlertCircle className="h-3.5 w-3.5" />
                 {error}
               </div>

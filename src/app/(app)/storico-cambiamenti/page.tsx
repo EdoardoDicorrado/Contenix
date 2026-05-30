@@ -29,7 +29,7 @@ export default async function StoricoCambiamentiPage() {
   const showArchivePrompt = totalEntries > ARCHIVE_THRESHOLD;
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
           <History className="h-5 w-5 text-blue-600" />

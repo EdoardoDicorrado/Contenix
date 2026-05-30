@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Loader2, AlertCircle, Users } from "lucide-react";
+import { Loader2, AlertCircle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AddButton } from "@/components/ui/add-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OverlayModal } from "@/components/ui/overlay-modal";
@@ -57,10 +58,7 @@ export function NewEmployeeButton() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="gap-2">
-        <Plus className="h-4 w-4" />
-        Nuovo dipendente
-      </Button>
+      <AddButton label="Nuovo dipendente" onClick={() => setOpen(true)} />
 
       {open && (
         <OverlayModal

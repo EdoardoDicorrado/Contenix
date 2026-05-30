@@ -15,6 +15,8 @@ import {
   incrementTransferMatchCount,
 } from "@/lib/db/queries/transfer-rules";
 import { getPrimaryAccount } from "@/lib/db/queries/financial-accounts";
+import { normalizeBankDescription } from "@/lib/description-normalizer";
+import { computeMovementHash, movementSignature } from "@/lib/movement-hash";
 
 const RowSchema = z.object({
   date: z.string().min(1),
@@ -31,7 +33,7 @@ const PayloadSchema = z.object({
 });
 
 export type ImportResult =
-  | { ok: true; inserted: number }
+  | { ok: true; inserted: number; skipped: number }
   | { ok: false; error: string };
 
 export async function importMovementsAction(
@@ -59,9 +61,35 @@ export async function importMovementsAction(
   const matchedRuleIds: string[] = [];
   const matchedTransferRuleIds: string[] = [];
 
+  // Counter posizionale per dedup: per ogni signature, traccia quanti
+  // movimenti identici (per quel batch) sono stati visti finora → occurrenceIndex
+  const seenInBatch = new Map<string, number>();
+
+  let insertedCount = 0;
+  let skippedCount = 0;
   try {
     await db.transaction(async (tx) => {
       const values = rows.map((r) => {
+        const date = new Date(r.date);
+        const amount = r.amount.toFixed(2);
+        const sig = movementSignature({
+          accountId: targetAccountId,
+          date,
+          amount,
+          type: r.type,
+          description: r.description,
+        });
+        const occurrenceIndex = seenInBatch.get(sig) ?? 0;
+        seenInBatch.set(sig, occurrenceIndex + 1);
+        const uniqueHash = computeMovementHash({
+          accountId: targetAccountId,
+          date,
+          amount,
+          type: r.type,
+          description: r.description,
+          occurrenceIndex,
+        });
+
         // Auto-detect trasferimento
         const transferMatch = findMatchingTransferRule(
           r.description,
@@ -71,14 +99,15 @@ export async function importMovementsAction(
         if (transferMatch) {
           matchedTransferRuleIds.push(transferMatch.ruleId);
           return {
-            date: new Date(r.date),
-            amount: r.amount.toFixed(2),
+            date,
+            amount,
             type: r.type,
             description: r.description,
             categoryId: null,
             accountId: targetAccountId,
             isTransfer: true,
             transferToAccountId: transferMatch.targetAccountId,
+            uniqueHash,
           };
         }
 
@@ -89,22 +118,32 @@ export async function importMovementsAction(
             : defaultExpenseCategoryId ?? null;
         const categoryId = matched ? matched.categoryId : fallback;
         if (matched) matchedRuleIds.push(matched.ruleId);
+        const norm = normalizeBankDescription(r.description);
         return {
-          date: new Date(r.date),
-          amount: r.amount.toFixed(2),
+          date,
+          amount,
           type: r.type,
           description: r.description,
+          descriptionClean: norm.changed ? norm.clean : null,
           categoryId,
           accountId: targetAccountId,
           isTransfer: false,
           transferToAccountId: null,
+          uniqueHash,
         };
       });
 
       const CHUNK = 500;
       for (let i = 0; i < values.length; i += CHUNK) {
-        await tx.insert(movements).values(values.slice(i, i + CHUNK));
+        const chunk = values.slice(i, i + CHUNK);
+        const result = await tx
+          .insert(movements)
+          .values(chunk)
+          .onConflictDoNothing({ target: movements.uniqueHash })
+          .returning({ id: movements.id });
+        insertedCount += result.length;
       }
+      skippedCount = rows.length - insertedCount;
     });
     if (matchedRuleIds.length > 0) {
       await incrementMatchCount([...new Set(matchedRuleIds)]);
@@ -115,7 +154,7 @@ export async function importMovementsAction(
 
     revalidatePath("/movimenti");
     revalidatePath("/");
-    return { ok: true, inserted: rows.length };
+    return { ok: true, inserted: insertedCount, skipped: skippedCount };
   } catch (e) {
     return {
       ok: false,

@@ -1,36 +1,40 @@
 import Link from "next/link";
-import { ArrowLeft, History } from "lucide-react";
-import { UploadClient } from "./upload-client";
+import { ArrowLeft } from "lucide-react";
+import { CaricaDropdown } from "./carica-dropdown";
+import { UploadHistoryView } from "./storico/history-view";
 
+/**
+ * Hub di caricamento fatture. Pattern: stesso di /regole — titolo + bottone
+ * principale (dropdown) per scegliere la sorgente, lista degli ultimi upload
+ * inline come riferimento.
+ */
 export default function CaricaFatturePage() {
   return (
-    <div className="max-w-4xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
+      <Link
+        href="/fatture"
+        className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 self-start"
+      >
+        <ArrowLeft className="h-3 w-3" />
+        Torna a Fatture
+      </Link>
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <Link
-            href="/fatture"
-            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            Torna a Fatture
-          </Link>
-          <h2 className="text-2xl font-semibold tracking-tight mt-2">Carica fatture</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            Carica fatture
+          </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            XML FatturaPA → lettura automatica gratuita. PDF → archiviati su storage privato,
-            dati da inserire manualmente o estrarre con AI. ZIP → estratto e processato.
-            I file di metadati/notifiche SDI vengono saltati automaticamente.
+            Scegli la sorgente con il bottone in alto. Sotto trovi lo storico
+            degli upload precedenti per riferimento.
           </p>
         </div>
-        <Link
-          href="/fatture/carica/storico"
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border text-xs text-foreground hover:bg-muted transition-colors"
-        >
-          <History className="h-3.5 w-3.5" />
-          Storico upload
-        </Link>
+        <CaricaDropdown />
       </div>
 
-      <UploadClient />
+      <section className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">Ultimi upload</h3>
+        <UploadHistoryView />
+      </section>
     </div>
   );
 }

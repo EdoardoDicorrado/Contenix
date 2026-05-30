@@ -80,7 +80,7 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
   ]);
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Movimenti</h2>
@@ -113,6 +113,11 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
               type: a.type,
               isPrimary: a.isPrimary,
             }))}
+            employees={employeesAll.map((e) => ({
+              id: e.id,
+              firstName: e.firstName,
+              lastName: e.lastName,
+            }))}
             defaultAccountId={primaryAccount?.id ?? null}
           />
         </div>
@@ -125,7 +130,11 @@ export default async function MovimentiPage({ searchParams }: { searchParams: SP
       />
 
       {!wantsMovements ? (
-        <MonthlyCards data={monthlyData} extraQs={extraQs} />
+        <MonthlyCards
+          data={monthlyData}
+          extraQs={extraQs}
+          filters={{ type, accountId, categoryIds, search }}
+        />
       ) : (
         <>
           {showMonthDetail && period.month && (

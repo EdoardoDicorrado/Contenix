@@ -70,7 +70,7 @@ export default async function DaRivederePage() {
   singletons.sort((a, b) => (a.date < b.date ? 1 : -1));
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <Link
           href="/movimenti"
@@ -89,7 +89,7 @@ export default async function DaRivederePage() {
 
       {allRows.length === 0 ? (
         <div className="rounded-lg border border-border bg-background p-12 flex flex-col items-center gap-3">
-          <CheckCircle2 className="h-10 w-10 text-green-600" />
+          <CheckCircle2 className="h-10 w-10 text-success" />
           <div className="text-center">
             <div className="font-medium">Nessun movimento da rivedere</div>
             <div className="text-sm text-muted-foreground mt-1">

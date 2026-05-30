@@ -11,7 +11,7 @@ export default async function ImportaPage() {
     getPrimaryAccount(),
   ]);
   return (
-    <div className="max-w-4xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Importa movimenti</h2>
         <p className="text-sm text-muted-foreground mt-1">

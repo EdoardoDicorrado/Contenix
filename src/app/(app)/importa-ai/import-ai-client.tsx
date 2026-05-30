@@ -79,7 +79,7 @@ export function ImportAiClient({
   // Override per riga: sourceRowIndex → categoryId (null = nessuna categoria)
   const [overrides, setOverrides] = useState<Map<number, string | null>>(new Map());
 
-  const [importResult, setImportResult] = useState<{ inserted: number } | null>(null);
+  const [importResult, setImportResult] = useState<{ inserted: number; skipped: number } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
   // useMemo deve essere chiamato sempre nello stesso ordine — anche se result
@@ -164,7 +164,7 @@ export function ImportAiClient({
     fd.append("metadata", JSON.stringify(metadata));
     startConfirming(async () => {
       const res = await confirmExcelImportAction(fd);
-      if (res.ok) setImportResult({ inserted: res.inserted });
+      if (res.ok) setImportResult({ inserted: res.inserted, skipped: res.skipped });
       else setImportError(res.error);
     });
   }
@@ -177,6 +177,14 @@ export function ImportAiClient({
         <h3 className="text-base font-semibold mt-3">Import completato</h3>
         <p className="text-sm text-muted-foreground mt-1">
           {importResult.inserted} movimenti aggiunti
+          {importResult.skipped > 0 && (
+            <>
+              {" · "}
+              <span className="text-foreground font-medium">
+                {importResult.skipped} duplicati saltati
+              </span>
+            </>
+          )}
         </p>
         <div className="flex items-center gap-2 mt-5">
           <Button onClick={() => router.push("/movimenti")}>Vai ai movimenti</Button>
@@ -830,7 +838,7 @@ function GroupCard({
                 <td className="px-4 py-2 text-muted-foreground tabular-nums whitespace-nowrap w-24">
                   {formatDate(new Date(r.date))}
                 </td>
-                <td className="px-3 py-2 truncate max-w-md" title={r.description}>
+                <td className="px-3 py-2 align-top whitespace-pre-wrap break-words">
                   {r.description}
                 </td>
                 <td
@@ -942,28 +950,27 @@ function ReviewStep({
                         "transition-colors"
                       }
                     >
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 align-top">
                         <input
                           type="checkbox"
                           checked={!isExcluded}
                           onChange={() => onToggleExclude(r.sourceRowIndex)}
-                          className="h-3.5 w-3.5 rounded border-input"
+                          className="h-3.5 w-3.5 rounded border-input mt-0.5"
                           title="Includi nell'import"
                         />
                       </td>
-                      <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap align-top">
                         {formatDate(new Date(r.date))}
                       </td>
                       <td
                         className={
-                          "px-3 py-2 max-w-md " + (isExcluded ? "line-through" : "")
+                          "px-3 py-2 align-top whitespace-pre-wrap break-words " +
+                          (isExcluded ? "line-through" : "")
                         }
                       >
-                        <div className="truncate" title={r.description}>
-                          {r.description}
-                        </div>
+                        {r.description}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 align-top">
                         <div className="flex items-center gap-1.5">
                           {r.suggestedFromRule && !hasOverride && (
                             <Sparkles
@@ -990,7 +997,7 @@ function ReviewStep({
                       </td>
                       <td
                         className={
-                          "px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap " +
+                          "px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap align-top " +
                           (r.type === "income" ? "text-success" : "text-danger") +
                           (isExcluded ? " line-through" : "")
                         }

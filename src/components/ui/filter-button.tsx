@@ -30,6 +30,12 @@ type Props<T extends string> = {
   /** Icona dell'overlay */
   overlayIcon?: React.ReactNode;
   className?: string;
+  /**
+   * Variante visiva del trigger. Default "pill" (uniforme con il resto
+   * dell'app). "compact" per casi dove serve un dropdown piccolo dentro
+   * spazi stretti.
+   */
+  variant?: "pill" | "compact";
 };
 
 /**
@@ -51,6 +57,7 @@ export function FilterButton<T extends string>({
   overlayTitle,
   overlayIcon,
   className,
+  variant = "pill",
 }: Props<T>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -93,10 +100,16 @@ export function FilterButton<T extends string>({
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "h-8 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-          !isDefault
-            ? "border-foreground bg-foreground text-background hover:opacity-90"
-            : "border-input bg-background text-foreground hover:bg-muted",
+          "inline-flex items-center gap-2 border transition-colors cursor-pointer",
+          variant === "compact"
+            ? "h-8 rounded-md px-2.5 text-xs " +
+                (!isDefault
+                  ? "border-foreground bg-foreground text-background hover:opacity-90"
+                  : "border-input bg-background text-foreground hover:bg-muted")
+            : "h-10 rounded-full px-4 text-sm " +
+                (!isDefault
+                  ? "border-foreground bg-foreground text-background hover:opacity-90"
+                  : "border-foreground/30 bg-transparent text-foreground hover:bg-foreground hover:text-background hover:border-foreground"),
         )}
       >
         <span className={cn("opacity-70", !isDefault && "text-background/80")}>

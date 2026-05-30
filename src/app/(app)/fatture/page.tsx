@@ -1,14 +1,17 @@
 import Link from "next/link";
 import {
-  Plus,
   Pencil,
   Trash2,
-  FileText,
   ArrowUpRight,
   ArrowDownLeft,
   AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AddLinkButton } from "@/components/ui/add-button";
+import {
+  ClickableInvoiceRow,
+  StopClickCell,
+} from "./clickable-invoice-row";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -17,6 +20,7 @@ import {
   getInvoiceMatchStats,
   listMonthlyInvoiceAggregates,
   type InvoiceStatus,
+  type InvoiceOrigin,
 } from "@/lib/db/queries/invoices";
 import { SyncInvoicesButton } from "../sincronizza/sync-buttons";
 import { periodFromSearchParams, periodToWindow } from "@/lib/period";
@@ -29,6 +33,7 @@ type SP = Promise<{
   type?: string;
   status?: string;
   search?: string;
+  origin?: string;
   period?: string;
   month?: string;
   from?: string;
@@ -62,27 +67,34 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
       ? (sp.status as InvoiceStatus)
       : undefined;
   const search = sp.search || undefined;
+  const origin: InvoiceOrigin | undefined =
+    sp.origin === "estere" || sp.origin === "cassetto" ? sp.origin : undefined;
   const period = periodFromSearchParams(sp);
   const { from, to } = periodToWindow(period);
 
   // Mostro la lista solo per "mese specifico". Tutti gli altri periodi mostrano
   // la vista a card mensili filtrata.
   const showInvoiceList = period.kind === "month";
-  const extraQs = buildExtraQs({ type, status, search });
+  const extraQs = buildExtraQs({ type, status, search, origin });
+
+  // URL corrente da preservare per il "Torna indietro" della pagina fattura.
+  // Include tutti i filtri attivi (period, month, type, ecc.) così al ritorno
+  // l'utente vede esattamente lo stato che aveva prima di aprire la fattura.
+  const backHref = buildSelfHref(sp);
 
   const [list, stats, monthlyAggs, matchStats] = await Promise.all([
     showInvoiceList
-      ? listInvoices({ type, status, search, from, to })
+      ? listInvoices({ type, status, search, from, to, origin })
       : Promise.resolve([] as Awaited<ReturnType<typeof listInvoices>>),
     getInvoicesStats(),
-    listMonthlyInvoiceAggregates({ type, status, search, from, to }),
+    listMonthlyInvoiceAggregates({ type, status, search, from, to, origin }),
     getInvoiceMatchStats(),
   ]);
 
   const now = new Date();
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Fatture</h2>
@@ -105,12 +117,7 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
             </Link>
           )}
           <SyncInvoicesButton stats={matchStats} />
-          <Link href="/fatture/nuovo">
-            <Button>
-              <Plus className="h-4 w-4" />
-              Nuova fattura
-            </Button>
-          </Link>
+          <AddLinkButton label="Nuova fattura" href="/fatture/nuovo" />
         </div>
       </div>
 
@@ -119,6 +126,7 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
           type: type ?? "",
           status: status ?? "",
           search: search ?? "",
+          origin: origin ?? "",
           period,
         }}
       />
@@ -130,12 +138,7 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
           title="Nessuna fattura in questo periodo"
           description="Cambia mese dalla barra dei filtri o crea una nuova fattura."
           action={
-            <Link href="/fatture/nuovo">
-              <Button>
-                <Plus className="h-4 w-4" />
-                Nuova fattura
-              </Button>
-            </Link>
+            <AddLinkButton label="Nuova fattura" href="/fatture/nuovo" />
           }
         />
       ) : (
@@ -162,7 +165,11 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
                 const displayStatus = isOverdue && inv.status !== "overdue" ? "overdue" : inv.status;
 
                 return (
-                  <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
+                  <ClickableInvoiceRow
+                    key={inv.id}
+                    invoiceId={inv.id}
+                    backHref={backHref}
+                  >
                     <td className="px-4 py-3">
                       {inv.type === "sale" ? (
                         <ArrowUpRight className="h-4 w-4 text-success" aria-label="Vendita" />
@@ -171,12 +178,14 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs">
-                      <Link
-                        href={`/fatture/${inv.id}`}
-                        className="text-foreground hover:text-primary"
-                      >
-                        {inv.number}
-                      </Link>
+                      <div className="inline-flex items-center gap-1.5">
+                        <span className="text-foreground">{inv.number}</span>
+                        {inv.extractionStatus === "foreign_pdf" && (
+                          <Badge tone="neutral" className="font-sans">
+                            Estera
+                          </Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-foreground">
                       <div className="font-medium">{inv.counterpartyName}</div>
@@ -210,13 +219,8 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
                         {STATUS_LABEL[displayStatus]}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3">
+                    <StopClickCell className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <Link href={`/fatture/${inv.id}`}>
-                          <Button variant="ghost" size="icon" aria-label="Apri">
-                            <FileText className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
                         <Link href={`/fatture/${inv.id}/modifica`}>
                           <Button variant="ghost" size="icon" aria-label="Modifica">
                             <Pencil className="h-3.5 w-3.5" />
@@ -235,8 +239,8 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
                           </Button>
                         </form>
                       </div>
-                    </td>
-                  </tr>
+                    </StopClickCell>
+                  </ClickableInvoiceRow>
                 );
               })}
             </tbody>
@@ -247,15 +251,40 @@ export default async function FatturePage({ searchParams }: { searchParams: SP }
   );
 }
 
+/** Serializza i searchParams della pagina /fatture in un URL relativo. */
+function buildSelfHref(sp: Record<string, string | undefined>): string {
+  const params = new URLSearchParams();
+  const keys = [
+    "type",
+    "status",
+    "search",
+    "origin",
+    "period",
+    "month",
+    "from",
+    "to",
+    "year",
+    "quarter",
+  ];
+  for (const k of keys) {
+    const v = sp[k];
+    if (v) params.set(k, v);
+  }
+  const qs = params.toString();
+  return qs ? `/fatture?${qs}` : "/fatture";
+}
+
 /** Querystring (senza period/month) da preservare nei link mese → dettaglio */
 function buildExtraQs(filters: {
   type: "purchase" | "sale" | undefined;
   status: InvoiceStatus | undefined;
   search: string | undefined;
+  origin: InvoiceOrigin | undefined;
 }): string {
   const params = new URLSearchParams();
   if (filters.type) params.set("type", filters.type);
   if (filters.status) params.set("status", filters.status);
   if (filters.search) params.set("search", filters.search);
+  if (filters.origin) params.set("origin", filters.origin);
   return params.toString();
 }

@@ -26,8 +26,32 @@
   --color-danger-foreground: var(--danger-foreground);
   --color-danger-muted: var(--danger-muted);
 
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-fustat);
   --font-mono: var(--font-geist-mono);
+
+  /* Scala font FLUID con clamp(min, preferred, max).
+   *  - min: scala compatta per laptop 13"-14" (~1280px e sotto)
+   *  - max: scala generosa stile Qonto per monitor 24"+ (1920+)
+   *  - preferred: interpolazione lineare basata su vw → cresce con la viewport
+   * Formula: a 1024px → min, a 1920px → max, tra i due → fluido.
+   * Le line-height restano in rem fisse (proporzionali al font).
+   */
+  /* MIN ridotti (laptop piccoli) + MAX ripristinati (desktop grandi).
+   * @ 1024px → MIN; @ 1920px → MAX; in mezzo fluido. */
+  --text-xs: clamp(0.6875rem, 0.55rem + 0.22vw, 0.875rem);   /* 11→14px */
+  --text-xs--line-height: 1.15rem;
+  --text-sm: clamp(0.75rem, 0.55rem + 0.31vw, 1rem);         /* 12→16px */
+  --text-sm--line-height: 1.4rem;
+  --text-base: clamp(0.8125rem, 0.57rem + 0.41vw, 1.125rem); /* 13→18px */
+  --text-base--line-height: 1.55rem;
+  --text-lg: clamp(0.9375rem, 0.69rem + 0.41vw, 1.25rem);    /* 15→20px */
+  --text-lg--line-height: 1.7rem;
+  --text-xl: clamp(1.0625rem, 0.76rem + 0.5vw, 1.5rem);      /* 17→24px */
+  --text-xl--line-height: 1.85rem;
+  --text-2xl: clamp(1.25rem, 0.85rem + 0.66vw, 1.875rem);    /* 20→30px */
+  --text-2xl--line-height: 2.2rem;
+  --text-3xl: clamp(1.5rem, 1rem + 0.81vw, 2.25rem);         /* 24→36px */
+  --text-3xl--line-height: 2.5rem;
 
   --radius-sm: 0.375rem;
   --radius: 0.5rem;
@@ -50,13 +74,16 @@
   --primary: #2563eb;
   --primary-foreground: #ffffff;
 
-  --success: #16a34a;
+  /* Verde/rosso bilanciati: vividi quanto basta per essere immediatamente
+   * leggibili, ma con chroma più bassa dei Tailwind 500/600 per evitare
+   * l'effetto fluorescente. Ispirati alla palette GitHub. */
+  --success: #1f8a42;
   --success-foreground: #ffffff;
-  --success-muted: #f0fdf4;
+  --success-muted: #e8f4ec;
 
-  --danger: #dc2626;
+  --danger: #c93434;
   --danger-foreground: #ffffff;
-  --danger-muted: #fef2f2;
+  --danger-muted: #fbe9e9;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -76,13 +103,14 @@
     --primary: #3b82f6;
     --primary-foreground: #ffffff;
 
-    --success: #22c55e;
-    --success-foreground: #052e13;
-    --success-muted: #052e1380;
+    /* Dark: tonalità GitHub — vividi su nero ma senza saturazione neon. */
+    --success: #3fb950;
+    --success-foreground: #0a1410;
+    --success-muted: #1a2e2080;
 
-    --danger: #ef4444;
-    --danger-foreground: #fff1f2;
-    --danger-muted: #4c050580;
+    --danger: #f04e4e;
+    --danger-foreground: #1a0a0a;
+    --danger-muted: #2e181880;
   }
 }
 
@@ -97,3 +125,34 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Scrollbar custom: sfondo trasparente + thumb bianco semi-trasparente.
+ * - Firefox: scrollbar-width / scrollbar-color
+ * - WebKit (Chrome/Safari/Edge): ::-webkit-scrollbar
+ * Applicato a tutti gli elementi scrollabili (html, body, drawer, ecc.). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 35%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 30%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground) 55%, transparent);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Animazioni sidebar gestite via framer-motion (vedi sidebar.tsx). */

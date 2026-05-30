@@ -7,7 +7,6 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
   UserCheck,
   ChevronDown,
   ChevronRight,
@@ -20,6 +19,7 @@ import {
   applyEmployeeAllocationAction,
   type ApplyEmployeeActionResult,
 } from "./employee-actions";
+import { SyncStatRow } from "./sync-stat-row";
 
 const STORAGE_KEY = "sync-last-employee-result";
 
@@ -89,35 +89,37 @@ export function EmployeeSyncCard({ stats }: { stats: EmployeeStats }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-background p-5 flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-3">
-        <StatBox
-          icon={<HelpCircle className="h-3.5 w-3.5" />}
-          label="Totale movimenti"
-          value={stats.total}
-          accent="neutral"
-        />
-        <StatBox
-          icon={<UserCheck className="h-3.5 w-3.5" />}
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col">
+        <SyncStatRow label="Totale movimenti" value={stats.total.toLocaleString("it-IT")} />
+        <SyncStatRow
           label="Con dipendente"
-          value={stats.allocated}
-          accent="green"
+          value={`${stats.allocated.toLocaleString("it-IT")} / ${stats.total.toLocaleString("it-IT")}`}
+          hint={
+            stats.total > 0
+              ? `${((stats.allocated / stats.total) * 100).toFixed(0)}%`
+              : undefined
+          }
         />
-        <StatBox
-          icon={<AlertCircle className="h-3.5 w-3.5" />}
+        <SyncStatRow
           label="Senza dipendente"
-          value={stats.unallocated}
-          accent={stats.unallocated > 0 ? "amber" : "neutral"}
+          value={stats.unallocated.toLocaleString("it-IT")}
+          hint={
+            stats.unallocated > 0 && stats.total > 0
+              ? `${((stats.unallocated / stats.total) * 100).toFixed(0)}%`
+              : "Tutti allocati"
+          }
         />
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-        <label className="flex items-center gap-2 text-xs cursor-pointer">
+      <div className="flex flex-col gap-3 pt-1">
+        <label className="flex items-start gap-2 text-xs cursor-pointer">
           <input
             type="checkbox"
             checked={overrideExisting}
             onChange={(e) => setOverrideExisting(e.target.checked)}
             disabled={pending}
+            className="mt-0.5"
           />
           <span>
             Sovrascrivi allocazioni esistenti{" "}
@@ -127,7 +129,7 @@ export function EmployeeSyncCard({ stats }: { stats: EmployeeStats }) {
           </span>
         </label>
 
-        <Button onClick={handleApply} disabled={pending} className="gap-2 shrink-0">
+        <Button onClick={handleApply} disabled={pending} className="w-full gap-2">
           {pending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
@@ -138,20 +140,22 @@ export function EmployeeSyncCard({ stats }: { stats: EmployeeStats }) {
       </div>
 
       {lastResult?.ok && (
-        <div className="border-t border-border pt-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-xs text-green-900 flex-wrap">
-            <CheckCircle2 className="h-3.5 w-3.5 text-green-700 shrink-0" />
-            <span>
-              Ultimo run{ranAt ? ` (${formatRelative(ranAt)})` : ""}:{" "}
+        <div className="border-t border-border pt-4 flex flex-col gap-3">
+          <div className="flex items-start gap-2 text-xs text-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />
+            <div className="flex-1 leading-relaxed">
+              <span className="text-muted-foreground">
+                Ultimo run{ranAt ? ` ${formatRelative(ranAt)}` : ""}:
+              </span>{" "}
               {lastResult.result.totalScanned} scansionati,{" "}
               <span className="font-medium">{lastResult.result.allocated}</span> nuovi allocati,{" "}
               <span className="font-medium">{lastResult.result.unchanged}</span> invariati.
-            </span>
+            </div>
             <button
               type="button"
               onClick={clearLastResult}
-              className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
-              title="Nascondi il report finché non rilanci"
+              className="text-[10px] text-muted-foreground hover:text-foreground underline shrink-0"
+              title="Nascondi il report"
             >
               Pulisci
             </button>
@@ -163,7 +167,7 @@ export function EmployeeSyncCard({ stats }: { stats: EmployeeStats }) {
       )}
 
       {lastResult && !lastResult.ok && (
-        <div className="flex items-start gap-2 border-t border-border pt-3 text-sm text-danger">
+        <div className="flex items-start gap-2 border-t border-border pt-4 text-sm text-danger">
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
           {lastResult.error}
         </div>
@@ -238,36 +242,6 @@ function AllocationGroupRow({ group }: { group: AllocationGroup }) {
           )}
         </ul>
       )}
-    </div>
-  );
-}
-
-function StatBox({
-  icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  accent: "green" | "blue" | "amber" | "neutral";
-}) {
-  const valueClass =
-    accent === "green" && value > 0
-      ? "text-success"
-      : accent === "amber" && value > 0
-        ? "text-danger"
-        : "text-foreground";
-  return (
-    <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <div className={`text-2xl font-semibold tabular-nums mt-0.5 ${valueClass}`}>
-        {value}
-      </div>
     </div>
   );
 }

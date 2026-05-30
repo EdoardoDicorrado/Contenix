@@ -19,13 +19,64 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
+import { toast } from "sonner";
 import { uploadFilesAction, type UploadResult } from "./actions";
 import { appendUploadRun } from "@/lib/upload-history";
 
 const LS_OUR_VAT = "wpaper.ourVat";
 const DEFAULT_OUR_VAT = "IT01827680339"; // WPaper
 
-export function UploadClient() {
+export type UploadMode = "cassetto" | "estero";
+
+type InvoiceTypeChoice = "auto" | "purchase" | "sale";
+
+const MODE_CONFIG: Record<
+  UploadMode,
+  {
+    accept: string;
+    fileExt: string[];
+    dropTitle: string;
+    dropHint: string;
+    showVatField: boolean;
+    /** Opzioni del selettore tipo fattura. */
+    typeChoices: Array<{ value: InvoiceTypeChoice; label: string; hint?: string }>;
+    /** Tipo di default selezionato all'apertura. */
+    defaultTypeChoice: InvoiceTypeChoice;
+  }
+> = {
+  cassetto: {
+    accept:
+      ".xml,.pdf,.zip,text/xml,application/xml,application/pdf,application/zip",
+    fileExt: [".xml", ".pdf", ".zip"],
+    dropTitle: "Trascina XML, PDF o ZIP (anche multipli)",
+    dropHint:
+      "XML FatturaPA → lettura automatica. PDF → archiviato, dati da completare. ZIP → estratto e processato file per file.",
+    showVatField: true,
+    typeChoices: [
+      { value: "auto", label: "Auto", hint: "rileva dall'XML (cedente / cessionario)" },
+      { value: "purchase", label: "Ricevute", hint: "acquisti" },
+      { value: "sale", label: "Emesse", hint: "vendite" },
+    ],
+    defaultTypeChoice: "auto",
+  },
+  estero: {
+    accept: ".pdf,application/pdf",
+    fileExt: [".pdf"],
+    dropTitle: "Trascina i PDF delle fatture estere",
+    dropHint:
+      "Fatture non FatturaPA (estere o cartacee): PDF archiviato e dati da estrarre con AI dalla pagina della fattura. Nessun XML disponibile.",
+    showVatField: false,
+    typeChoices: [
+      { value: "purchase", label: "Ricevute", hint: "acquisti dall'estero" },
+      { value: "sale", label: "Emesse", hint: "vendite verso l'estero" },
+    ],
+    defaultTypeChoice: "purchase",
+  },
+};
+
+export function UploadClient({ mode = "cassetto" }: { mode?: UploadMode }) {
+  const config = MODE_CONFIG[mode];
+  const [typeChoice, setTypeChoice] = useState<InvoiceTypeChoice>(config.defaultTypeChoice);
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
@@ -65,7 +116,7 @@ export function UploadClient() {
     const arr = Array.from(list);
     const valid = arr.filter((f) => {
       const n = f.name.toLowerCase();
-      return n.endsWith(".xml") || n.endsWith(".pdf") || n.endsWith(".zip");
+      return config.fileExt.some((ext) => n.endsWith(ext));
     });
     setPickedFiles((prev) => [...prev, ...valid]);
   }
@@ -97,6 +148,8 @@ export function UploadClient() {
 
     const fd = new FormData();
     fd.append("ourVat", effectiveVat);
+    fd.append("mode", mode);
+    if (typeChoice !== "auto") fd.append("defaultType", typeChoice);
     for (const f of pickedFiles) fd.append("files", f, f.name);
 
     startTransition(async () => {
@@ -104,7 +157,29 @@ export function UploadClient() {
         const res = await uploadFilesAction(fd);
         setResult(res);
         // Storico locale per "cosa è entrato e cosa no" tra una sessione e l'altra
-        if (res.ok) appendUploadRun(res);
+        if (res.ok) {
+          appendUploadRun(res);
+          const am = res.autoMatch;
+          if (am && (am.autoMatched > 0 || am.aggregateMatched > 0)) {
+            const total = am.autoMatched + am.aggregateMatched;
+            const parts: string[] = [];
+            if (am.autoMatched > 0) parts.push(`${am.autoMatched} 1:1`);
+            if (am.aggregateMatched > 0) parts.push(`${am.aggregateMatched} aggregati`);
+            toast.success(
+              `${total} match automatici creati`,
+              {
+                description:
+                  am.needsReview > 0
+                    ? `${parts.join(" + ")} · ${am.needsReview} da rivedere manualmente`
+                    : parts.join(" + "),
+              },
+            );
+          } else if (am && am.needsReview > 0) {
+            toast.message(`${am.needsReview} fatture da rivedere`, {
+              description: "Nessun match automatico applicato. Vai su 'Da rivedere' per assegnarli a mano.",
+            });
+          }
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Errore upload");
       }
@@ -117,29 +192,77 @@ export function UploadClient() {
 
   return (
     <div className="flex flex-col gap-6">
+      {config.showVatField && (
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <Label>P.IVA WPaper (per distinguere acquisti / vendite)</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              value={ourVat}
+              onChange={(e) => saveOurVat(e.target.value.toUpperCase())}
+              placeholder={DEFAULT_OUR_VAT}
+              maxLength={20}
+              required
+              className="font-mono"
+            />
+            {ourVat === DEFAULT_OUR_VAT ? (
+              <Badge tone="success">WPaper</Badge>
+            ) : ourVat ? (
+              <Badge tone="primary">Custom</Badge>
+            ) : null}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Usata solo per XML FatturaPA. Salvata nel browser.
+          </p>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-card px-4 py-3">
-        <Label>P.IVA WPaper (per distinguere acquisti / vendite)</Label>
-        <div className="flex items-center gap-2">
-          <Input
-            value={ourVat}
-            onChange={(e) => saveOurVat(e.target.value.toUpperCase())}
-            placeholder={DEFAULT_OUR_VAT}
-            maxLength={20}
-            required
-            className="font-mono"
-          />
-          {ourVat === DEFAULT_OUR_VAT ? (
-            <Badge tone="success">WPaper</Badge>
-          ) : ourVat ? (
-            <Badge tone="primary">Custom</Badge>
-          ) : null}
+        <Label>Tipo fattura</Label>
+        <div className="flex items-center gap-2 flex-wrap mt-1">
+          {config.typeChoices.map((c) => (
+            <label
+              key={c.value}
+              className={`inline-flex items-center gap-2 h-9 px-3 rounded-md border text-sm cursor-pointer transition-colors ${
+                typeChoice === c.value
+                  ? "bg-foreground text-background border-foreground font-medium"
+                  : "border-border text-foreground hover:bg-muted"
+              }`}
+            >
+              <input
+                type="radio"
+                name="invoice-type-choice"
+                value={c.value}
+                checked={typeChoice === c.value}
+                onChange={() => setTypeChoice(c.value)}
+                className="sr-only"
+              />
+              {c.label}
+              {c.hint && (
+                <span
+                  className={`text-[10.5px] ${
+                    typeChoice === c.value ? "opacity-80" : "text-muted-foreground"
+                  }`}
+                >
+                  {c.hint}
+                </span>
+              )}
+            </label>
+          ))}
         </div>
         <p className="text-[11px] text-muted-foreground mt-1.5">
-          Usata solo per XML FatturaPA. Salvata nel browser.
+          {mode === "cassetto"
+            ? "Auto rileva il tipo dall'XML FatturaPA (cedente/cessionario). Forza un tipo se vuoi sovrascrivere o per i PDF allegati."
+            : "Per le fatture estere il tipo va sempre indicato — non c'è XML che lo determini."}
         </p>
       </div>
 
-      <DropZone fileInputRef={fileInputRef} onFiles={addFiles} />
+      <DropZone
+        fileInputRef={fileInputRef}
+        onFiles={addFiles}
+        accept={config.accept}
+        title={config.dropTitle}
+        hint={config.dropHint}
+      />
 
       {pickedFiles.length > 0 && (
         <section className="rounded-lg border border-border bg-card overflow-hidden">
@@ -218,9 +341,15 @@ function FileRow({ file, onRemove }: { file: File; onRemove: () => void }) {
 function DropZone({
   fileInputRef,
   onFiles,
+  accept,
+  title,
+  hint,
 }: {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFiles: (f: FileList | File[]) => void;
+  accept: string;
+  title: string;
+  hint: string;
 }) {
   const [isDrag, setIsDrag] = useState(false);
   return (
@@ -244,14 +373,12 @@ function DropZone({
       }
     >
       <Upload className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm font-medium mt-3">Trascina XML, PDF o ZIP (anche multipli)</p>
-      <p className="text-xs text-muted-foreground mt-1">
-        XML FatturaPA → lettura automatica. PDF → archiviato, dati da completare. ZIP → estratto e processato file per file.
-      </p>
+      <p className="text-sm font-medium mt-3">{title}</p>
+      <p className="text-xs text-muted-foreground mt-1">{hint}</p>
       <input
         ref={fileInputRef}
         type="file"
-        accept=".xml,.pdf,.zip,text/xml,application/xml,application/pdf,application/zip"
+        accept={accept}
         multiple
         className="hidden"
         onChange={(e) => {
@@ -281,6 +408,29 @@ function ResultPanel({
           {result.totalDuplicates} duplicati · {result.totalSkipped} metadati SDI saltati ·{" "}
           {result.totalErrors} errori
         </p>
+        {(result.totalSales > 0 || result.totalPurchases > 0) && (
+          <p className="text-xs text-muted-foreground mt-2">
+            {result.totalSales > 0 && (
+              <>
+                Emesse <span className="font-semibold text-foreground tabular-nums">{result.totalSales}</span>
+              </>
+            )}
+            {result.totalSales > 0 && result.totalPurchases > 0 && " · "}
+            {result.totalPurchases > 0 && (
+              <>
+                Ricevute <span className="font-semibold text-foreground tabular-nums">{result.totalPurchases}</span>
+              </>
+            )}
+          </p>
+        )}
+        {result.periodFrom && result.periodTo && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Periodo coperto:{" "}
+            <span className="text-foreground font-medium">
+              {formatPeriodRange(result.periodFrom, result.periodTo)}
+            </span>
+          </p>
+        )}
         <div className="flex items-center gap-2 mt-5">
           <Button onClick={onGoFatture}>Vai alle fatture</Button>
           <Button variant="ghost" onClick={onReset}>
@@ -340,6 +490,25 @@ function StatusBadge({ status }: { status: "created" | "stub" | "duplicate" | "e
   if (status === "duplicate") return <Badge tone="neutral">Duplicato</Badge>;
   if (status === "skipped") return <Badge tone="neutral">Metadato SDI</Badge>;
   return <Badge tone="danger">Errore</Badge>;
+}
+
+function formatPeriodRange(fromIso: string, toIso: string): string {
+  // ISO YYYY-MM-DD
+  const from = new Date(fromIso);
+  const to = new Date(toIso);
+  const sameMonth =
+    from.getUTCFullYear() === to.getUTCFullYear() &&
+    from.getUTCMonth() === to.getUTCMonth();
+  const fmtMonth = (d: Date) =>
+    d.toLocaleDateString("it-IT", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  const fmtDay = (d: Date) =>
+    d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+  if (sameMonth) return fmtMonth(from);
+  return `${fmtDay(from)} → ${fmtDay(to)}`;
 }
 
 function formatBytes(b: number): string {

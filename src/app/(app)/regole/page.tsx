@@ -22,7 +22,7 @@ export default async function RegolePage() {
   ]);
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Regole</h2>
@@ -145,7 +145,7 @@ export default async function RegolePage() {
                         <input type="hidden" name="id" value={r.id} />
                         <button
                           type="submit"
-                          className="text-muted-foreground hover:text-red-600 p-1 rounded hover:bg-red-50"
+                          className="text-muted-foreground hover:text-danger p-1 rounded hover:bg-danger/10"
                           title="Elimina regola"
                         >
                           <Trash2 className="h-3.5 w-3.5" />

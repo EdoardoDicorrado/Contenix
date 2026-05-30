@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   FileText,
   Loader2,
@@ -9,18 +10,32 @@ import {
   ArrowDownLeft,
   X,
   Link2,
+  Ban,
+  ChevronDown,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { getMovementMatchesAction, type MovementInvoiceMatch } from "./match-actions";
-import { AbbinaFatturaOverlay } from "../fatture/abbina-overlays";
+import {
+  getMovementMatchesAction,
+  type MovementInvoiceMatch,
+} from "./match-actions";
+import {
+  linkInvoiceMovementAction,
+  setMovementMatchUnavailableAction,
+} from "../fatture/abbina-actions";
+import {
+  InvoicePickerOverlay,
+  type PickerMovement,
+} from "../fatture/invoice-picker-overlay";
 
 /**
- * Cella della tabella movimenti che mostra il "match fattura" associato.
+ * Cella della tabella movimenti che mostra il match fattura associato.
  *
- *  - Vuoto → "—" (lato server non sappiamo se ce ne sono in arrivo)
- *  - 1 match → "n. 123 · Acme" cliccabile → overlay con dettaglio
- *  - N match (pagamento aggregato) → "n. 123 +N altre"
+ *  - matchUnavailable=true → "Non abbinabile" + opzione "Riabilita"
+ *  - matchCount=0          → "Abbina" (apre il picker) + opzione "Non abbinabile"
+ *  - matchCount=1          → "n. 123 · Acme" cliccabile → overlay riassuntivo
+ *  - matchCount>1          → "n. 123 +N altre" (pagamento aggregato)
  */
 export function MatchInvoiceCell({
   movementId,
@@ -28,6 +43,7 @@ export function MatchInvoiceCell({
   movementDescription,
   movementAmount,
   movementType,
+  matchUnavailable,
   primaryInvoiceId,
   primaryInvoiceNumber,
   primaryInvoiceCounterparty,
@@ -39,45 +55,161 @@ export function MatchInvoiceCell({
   movementDescription?: string;
   movementAmount?: string;
   movementType?: "income" | "expense";
+  matchUnavailable?: boolean;
   primaryInvoiceId: string | null;
   primaryInvoiceNumber: string | null;
   primaryInvoiceCounterparty: string | null;
   primaryInvoiceType: "sale" | "purchase" | null;
   matchCount: number;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [abbinaOpen, setAbbinaOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busyUnavailable, setBusyUnavailable] = useState(false);
+  const [busyInvoiceId, setBusyInvoiceId] = useState<string | null>(null);
 
+  const movementReady =
+    !!movementDescription && !!movementAmount && !!movementType && !!movementDate;
+
+  async function toggleUnavailable(value: boolean) {
+    setMenuOpen(false);
+    setBusyUnavailable(true);
+    try {
+      const res = await setMovementMatchUnavailableAction({
+        movementId,
+        value,
+      });
+      if (res.ok) {
+        toast.success(
+          value
+            ? "Movimento marcato come non abbinabile"
+            : "Movimento riabilitato per l'abbinamento",
+        );
+        router.refresh();
+      } else toast.error(res.error);
+    } finally {
+      setBusyUnavailable(false);
+    }
+  }
+
+  async function handlePickInvoice(invoiceId: string, amount: string) {
+    setBusyInvoiceId(invoiceId);
+    try {
+      const matched = Math.min(
+        parseFloat(amount),
+        Math.abs(parseFloat(movementAmount ?? "0")),
+      );
+      const res = await linkInvoiceMovementAction({
+        invoiceId,
+        movementId,
+        matchedAmount: matched.toFixed(2),
+      });
+      if (res.ok) {
+        toast.success("Fattura abbinata al movimento");
+        router.refresh();
+        setPickerOpen(false);
+      } else toast.error(res.error);
+    } finally {
+      setBusyInvoiceId(null);
+    }
+  }
+
+  // 1) Stato: non abbinabile
+  if (matchUnavailable) {
+    return (
+      <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Ban className="h-3 w-3" />
+        Non abbinabile
+        <button
+          type="button"
+          onClick={() => toggleUnavailable(false)}
+          disabled={busyUnavailable}
+          className="text-foreground hover:underline disabled:opacity-50 ml-1"
+        >
+          {busyUnavailable ? "…" : "Riabilita"}
+        </button>
+      </div>
+    );
+  }
+
+  // 2) Stato: nessun match
   if (matchCount === 0 || !primaryInvoiceId) {
+    if (!movementReady) {
+      return <span className="text-muted-foreground text-xs">—</span>;
+    }
     return (
       <>
-        {movementDescription && movementAmount && movementType && movementDate ? (
+        <div className="inline-flex items-center gap-0.5">
           <button
             type="button"
-            onClick={() => setAbbinaOpen(true)}
-            className="inline-flex items-center gap-1 text-xs text-foreground hover:underline"
+            onClick={() => setPickerOpen(true)}
+            className="inline-flex items-center gap-1 text-xs text-foreground hover:underline pr-1"
             title="Cerca una fattura da abbinare"
           >
             <Link2 className="h-3 w-3" />
             Abbina
           </button>
-        ) : (
-          <span className="text-muted-foreground text-xs">—</span>
-        )}
-        {abbinaOpen && movementDescription && movementAmount && movementType && movementDate && (
-          <AbbinaFatturaOverlay
-            movementId={movementId}
-            movementDescription={movementDescription}
-            movementAmount={movementAmount}
-            movementType={movementType}
-            movementDate={movementDate}
-            onClose={() => setAbbinaOpen(false)}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              onBlur={() => setTimeout(() => setMenuOpen(false), 120)}
+              className="text-muted-foreground hover:text-foreground p-0.5"
+              aria-label="Altre opzioni"
+            >
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {menuOpen && (
+              <div className="absolute z-50 right-0 mt-1 w-56 rounded-md border border-border bg-background shadow-md py-1 text-xs">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => toggleUnavailable(true)}
+                  disabled={busyUnavailable}
+                  className="w-full text-left px-3 py-1.5 hover:bg-muted text-foreground inline-flex items-center gap-2"
+                >
+                  <Ban className="h-3 w-3 text-muted-foreground" />
+                  Segna come non abbinabile
+                </button>
+                <p className="px-3 pt-1 pb-1.5 text-[10.5px] text-muted-foreground leading-snug">
+                  Per commissioni, IVA, stipendi.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+        {pickerOpen && movementReady && (
+          <InvoicePickerOverlay
+            movement={
+              {
+                id: movementId,
+                date: movementDate!,
+                amount: movementAmount!,
+                type: movementType!,
+                description: movementDescription!,
+              } satisfies PickerMovement
+            }
+            title="Abbina una fattura al movimento"
+            subtitle="I candidati sono ordinati per probabilità. Click su 'Usa questa' per creare il match."
+            asideHint={`Cerca tra le fatture ${
+              movementType === "income" ? "di vendita" : "di acquisto"
+            } compatibili. Ordinate per probabilità di match.`}
+            busyInvoiceId={busyInvoiceId}
+            onSelect={handlePickInvoice}
+            onClose={() => setPickerOpen(false)}
+            onMarkUnmatchable={() => {
+              setPickerOpen(false);
+              toggleUnavailable(true);
+            }}
+            unmatchableBusy={busyUnavailable}
           />
         )}
       </>
     );
   }
 
+  // 3) Stato: matchato (1 o più)
   return (
     <>
       <button
@@ -165,7 +297,9 @@ function MatchOverlay({
               Fatture collegate al movimento
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {data ? `${data.length} ${data.length === 1 ? "fattura" : "fatture"} matchate` : ""}
+              {data
+                ? `${data.length} ${data.length === 1 ? "fattura" : "fatture"} matchate`
+                : ""}
             </p>
           </div>
           <button

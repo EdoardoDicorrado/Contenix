@@ -29,7 +29,7 @@ export default async function CategoriePage({ searchParams }: { searchParams: SP
   const expense = rows.filter((r) => r.type === "expense");
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Categorie</h2>

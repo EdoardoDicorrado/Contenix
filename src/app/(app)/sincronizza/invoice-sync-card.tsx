@@ -8,7 +8,6 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
   ArrowRight,
   ChevronDown,
   ChevronRight,
@@ -21,6 +20,7 @@ import {
   applyInvoiceMatchesAction,
   type ApplyInvoiceMatchesActionResult,
 } from "./invoice-actions";
+import { SyncStatRow } from "./sync-stat-row";
 
 export type InvoiceMatchStats = {
   /** Fatture totali (escluse cancellate). */
@@ -94,68 +94,73 @@ export function InvoiceSyncCard({ stats }: { stats: InvoiceMatchStats }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-background p-5 flex flex-col gap-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatBox
-          icon={<HelpCircle className="h-3.5 w-3.5" />}
-          label="Totale"
-          value={stats.total}
-          tone="neutral"
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col">
+        <SyncStatRow label="Totale fatture" value={stats.total.toLocaleString("it-IT")} />
+        <SyncStatRow
+          label="Completamente matchate"
+          value={`${stats.fullyMatched.toLocaleString("it-IT")} / ${stats.total.toLocaleString("it-IT")}`}
+          hint={
+            stats.total > 0
+              ? `${((stats.fullyMatched / stats.total) * 100).toFixed(0)}%`
+              : undefined
+          }
         />
-        <StatBox
-          icon={<Link2 className="h-3.5 w-3.5" />}
-          label="Matchate"
-          value={stats.matched}
-          tone="success"
+        <SyncStatRow
+          label="Con almeno un match"
+          value={stats.matched.toLocaleString("it-IT")}
+          hint={
+            stats.total > 0
+              ? `${((stats.matched / stats.total) * 100).toFixed(0)}%`
+              : undefined
+          }
         />
-        <StatBox
-          icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-          label="Completate"
-          value={stats.fullyMatched}
-          tone="success"
-        />
-        <StatBox
-          icon={<AlertCircle className="h-3.5 w-3.5" />}
+        <SyncStatRow
           label="Senza match"
-          value={stats.unmatched}
-          tone={stats.unmatched > 0 ? "danger" : "neutral"}
+          value={stats.unmatched.toLocaleString("it-IT")}
+          loss={stats.unmatched > 0}
+          hint={
+            stats.unmatched > 0 && stats.total > 0
+              ? `${((stats.unmatched / stats.total) * 100).toFixed(0)}% da rivedere`
+              : "Tutte matchate"
+          }
         />
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-        <p className="text-xs text-muted-foreground">
-          Match automatico solo per score &ge; 90 (&quot;quasi certo&quot;) e
-          distacco di sicurezza dal secondo. I dubbi restano per la
-          revisione manuale dalla pagina della fattura.
+      <div className="flex flex-col gap-3 pt-1">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Match automatico per score ≥ 90 (&quot;quasi certo&quot;) + score 70-89
+          (&quot;probabile&quot;) con distacco di sicurezza dal secondo. Vanno
+          in <strong>/fatture/in-approvazione</strong> e devi approvarli.
         </p>
-        <Button onClick={handleApply} disabled={pending} className="gap-2 shrink-0">
+        <Button onClick={handleApply} disabled={pending} className="w-full gap-2">
           {pending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Link2 className="h-4 w-4" />
           )}
-          {pending ? "Match in corso…" : "Auto-match"}
+          {pending ? "Match in corso…" : "Avvia auto-match"}
         </Button>
       </div>
 
       {lastResult?.ok && (
-        <div className="border-t border-border pt-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-xs text-foreground flex-wrap">
-            <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-            <span>
-              Ultimo run{ranAt ? ` (${formatRelative(ranAt)})` : ""}:{" "}
-              {lastResult.result.totalScanned} esaminate,{" "}
-              <span className="font-medium">{lastResult.result.autoMatched}</span>{" "}
-              match auto creati,{" "}
-              <span className="font-medium">{lastResult.result.needsReview}</span>{" "}
-              da revisionare,{" "}
-              <span className="font-medium">{lastResult.result.noCandidate}</span>{" "}
-              senza candidati.
-            </span>
+        <div className="border-t border-border pt-4 flex flex-col gap-3">
+          <div className="flex items-start gap-2 text-xs text-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />
+            <div className="flex-1 leading-relaxed">
+              <span className="text-muted-foreground">
+                Ultimo run{ranAt ? ` ${formatRelative(ranAt)}` : ""}:
+              </span>{" "}
+              {lastResult.result.totalScanned} esaminate ·{" "}
+              <span className="font-medium">{lastResult.result.autoMatched}</span> match 1:1 ·{" "}
+              <span className="font-medium">{lastResult.result.aggregateMatched ?? 0}</span> aggregati ·{" "}
+              <span className="font-medium">{lastResult.result.needsReview}</span> da rivedere ·{" "}
+              <span className="font-medium">{lastResult.result.noCandidate}</span> senza candidati.
+            </div>
             <button
               type="button"
               onClick={clearLastResult}
-              className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
+              className="text-[10px] text-muted-foreground hover:text-foreground underline shrink-0"
               title="Nascondi il report"
             >
               Pulisci
@@ -168,7 +173,7 @@ export function InvoiceSyncCard({ stats }: { stats: InvoiceMatchStats }) {
       )}
 
       {lastResult && !lastResult.ok && (
-        <div className="flex items-start gap-2 border-t border-border pt-3 text-sm text-danger">
+        <div className="flex items-start gap-2 border-t border-border pt-4 text-sm text-danger">
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
           {lastResult.error}
         </div>
@@ -236,32 +241,3 @@ function MatchesReport({ examples }: { examples: Example[] }) {
   );
 }
 
-function StatBox({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  tone: "success" | "danger" | "neutral";
-}) {
-  const valueClass =
-    tone === "success" && value > 0
-      ? "text-success"
-      : tone === "danger" && value > 0
-        ? "text-danger"
-        : "text-foreground";
-  return (
-    <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <div className={`text-2xl font-semibold tabular-nums mt-0.5 ${valueClass}`}>
-        {value}
-      </div>
-    </div>
-  );
-}

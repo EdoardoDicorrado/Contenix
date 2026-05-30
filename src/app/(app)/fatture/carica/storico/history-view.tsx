@@ -128,6 +128,12 @@ function RunCard({ entry }: { entry: UploadRunEntry }) {
           <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
             <Stat label="Letti" value={r.totalCreated} tone="success" />
             {r.totalStub > 0 && <Stat label="PDF stub" value={r.totalStub} />}
+            {r.totalSales > 0 && (
+              <Stat label="Emesse" value={r.totalSales} />
+            )}
+            {r.totalPurchases > 0 && (
+              <Stat label="Ricevute" value={r.totalPurchases} />
+            )}
             {r.totalDuplicates > 0 && (
               <Stat label="Duplicati" value={r.totalDuplicates} />
             )}
@@ -138,12 +144,37 @@ function RunCard({ entry }: { entry: UploadRunEntry }) {
               <Stat label="Errori" value={r.totalErrors} tone="danger" />
             )}
           </div>
+          {r.periodFrom && r.periodTo && (
+            <div className="text-[11px] text-muted-foreground mt-1">
+              Periodo coperto:{" "}
+              <span className="text-foreground font-medium">
+                {formatPeriod(r.periodFrom, r.periodTo)}
+              </span>
+            </div>
+          )}
         </div>
       </button>
 
       {open && <FilesList files={r.files} />}
     </div>
   );
+}
+
+function formatPeriod(fromIso: string, toIso: string): string {
+  const from = new Date(fromIso);
+  const to = new Date(toIso);
+  const sameMonth =
+    from.getUTCFullYear() === to.getUTCFullYear() &&
+    from.getUTCMonth() === to.getUTCMonth();
+  if (sameMonth)
+    return from.toLocaleDateString("it-IT", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  const fmtDay = (d: Date) =>
+    d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+  return `${fmtDay(from)} → ${fmtDay(to)}`;
 }
 
 function FilesList({ files }: { files: UploadFileResult[] }) {

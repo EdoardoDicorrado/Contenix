@@ -4,7 +4,7 @@ import { ImportStoricoClient } from "./import-storico-client";
 
 export default function ImportaStoricoPage() {
   return (
-    <div className="max-w-5xl mx-auto flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div>
         <Link
           href="/movimenti"

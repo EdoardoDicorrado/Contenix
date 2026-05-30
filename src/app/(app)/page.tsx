@@ -109,7 +109,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   });
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>

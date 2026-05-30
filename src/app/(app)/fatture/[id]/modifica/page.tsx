@@ -17,7 +17,7 @@ export default async function ModificaFatturaPage({
   const boundAction = updateInvoiceAction.bind(null, id);
 
   return (
-    <div className="max-w-4xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <Link
           href={`/fatture/${id}`}

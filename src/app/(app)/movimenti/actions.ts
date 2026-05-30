@@ -229,6 +229,11 @@ const InlineCreateMovementSchema = z.object({
   description: z.string().min(1).max(500),
   categoryId: z.string().uuid().nullable().optional(),
   accountId: z.string().uuid().nullable().optional(),
+  employeeId: z.string().uuid().nullable().optional(),
+  isTransfer: z.boolean().optional(),
+  transferToAccountId: z.string().uuid().nullable().optional(),
+  saveAsRule: z.boolean().optional(),
+  rulePattern: z.string().optional(),
 });
 
 export type InlineCreateMovementResult =
@@ -249,17 +254,56 @@ export async function createMovementInlineAction(
       const primary = await getPrimaryAccount();
       accountId = primary?.id ?? null;
     }
+    const isTransfer = parsed.data.isTransfer === true;
     const row = await createMovement({
       date: new Date(parsed.data.date),
       amount: parseFloat(parsed.data.amount).toFixed(2),
       type: parsed.data.type,
       description: parsed.data.description,
-      categoryId: parsed.data.categoryId ?? null,
-      employeeId: null,
+      categoryId: isTransfer ? null : parsed.data.categoryId ?? null,
+      employeeId: isTransfer ? null : parsed.data.employeeId ?? null,
       accountId,
     });
+
+    // Flag isTransfer + transferToAccountId via update (createMovement non li
+    // accetta direttamente). Faccio update solo se isTransfer.
+    if (isTransfer && parsed.data.transferToAccountId) {
+      const { db } = await import("@/lib/db");
+      const { movements } = await import("@/lib/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await db
+        .update(movements)
+        .set({
+          isTransfer: true,
+          transferToAccountId: parsed.data.transferToAccountId,
+          updatedAt: new Date(),
+        })
+        .where(eq(movements.id, row.id));
+    }
+
+    // Save as rule (categorization rule, solo se non transfer e c'è categoria)
+    if (
+      parsed.data.saveAsRule === true &&
+      !isTransfer &&
+      parsed.data.categoryId
+    ) {
+      const pattern = (parsed.data.rulePattern || "").trim();
+      if (pattern.length >= 3) {
+        try {
+          await createRule({
+            pattern,
+            categoryId: parsed.data.categoryId,
+            movementType: parsed.data.type,
+          });
+        } catch {
+          // ignora duplicati
+        }
+      }
+    }
+
     revalidatePath("/movimenti");
     revalidatePath("/conti");
+    revalidatePath("/regole");
     revalidatePath("/");
     return { ok: true, id: row.id };
   } catch (e) {

@@ -9,6 +9,8 @@ import { db } from "@/lib/db";
 import { categories, categorizationRules, movements } from "@/lib/db/schema";
 import { listCategories } from "@/lib/db/queries/categories";
 import { getPrimaryAccount, listAccounts } from "@/lib/db/queries/financial-accounts";
+import { normalizeBankDescription } from "@/lib/description-normalizer";
+import { computeMovementHash, movementSignature } from "@/lib/movement-hash";
 import {
   buildCategoryProposals,
   buildRawToCanonicalMap,
@@ -146,6 +148,7 @@ export type ConfirmStoricoResult =
   | {
       ok: true;
       insertedMovements: number;
+      skippedMovements: number;
       createdCategories: number;
       createdRules: number;
       skippedRows: number;
@@ -314,6 +317,7 @@ export async function confirmStoricoImportAction(
           movementType: r.movementType,
         }));
 
+      const seenInBatch = new Map<string, number>();
       const values = rowsToInsert.map((r) => {
         const dec = rawToDecision.get(r.rawCategory)!;
         let categoryId: string | null = canonicalToId.get(dec.canonical) ?? null;
@@ -335,26 +339,55 @@ export async function confirmStoricoImportAction(
         const desc = r.descriptionExt
           ? `${r.description} — ${r.descriptionExt}`
           : r.description;
+        const norm = normalizeBankDescription(desc);
+        const amount = r.amount.toFixed(2);
+        const sig = movementSignature({
+          accountId: meta.accountId,
+          date: r.date,
+          amount,
+          type: r.type,
+          description: desc,
+        });
+        const occurrenceIndex = seenInBatch.get(sig) ?? 0;
+        seenInBatch.set(sig, occurrenceIndex + 1);
+        const uniqueHash = computeMovementHash({
+          accountId: meta.accountId,
+          date: r.date,
+          amount,
+          type: r.type,
+          description: desc,
+          occurrenceIndex,
+        });
 
         return {
           date: r.date,
-          amount: r.amount.toFixed(2),
+          amount,
           type: r.type,
           description: desc,
+          descriptionClean: norm.changed ? norm.clean : null,
           categoryId,
           accountId: meta.accountId,
+          uniqueHash,
         };
       });
 
       const CHUNK = 500;
+      let insertedCount = 0;
       for (let i = 0; i < values.length; i += CHUNK) {
-        await tx.insert(movements).values(values.slice(i, i + CHUNK));
+        const chunk = values.slice(i, i + CHUNK);
+        const result = await tx
+          .insert(movements)
+          .values(chunk)
+          .onConflictDoNothing({ target: movements.uniqueHash })
+          .returning({ id: movements.id });
+        insertedCount += result.length;
       }
 
       return {
         createdCategories,
         createdRules,
-        insertedMovements: values.length,
+        insertedMovements: insertedCount,
+        skippedMovements: values.length - insertedCount,
       };
     });
 
@@ -366,6 +399,7 @@ export async function confirmStoricoImportAction(
     return {
       ok: true,
       insertedMovements: result.insertedMovements,
+      skippedMovements: result.skippedMovements,
       createdCategories: result.createdCategories,
       createdRules: result.createdRules,
       skippedRows,

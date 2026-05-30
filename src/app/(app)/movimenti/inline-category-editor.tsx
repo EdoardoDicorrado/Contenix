@@ -146,7 +146,7 @@ export function InlineCategoryEditor({
         {pending ? (
           <Loader2 className="h-3 w-3 animate-spin text-muted-foreground shrink-0" />
         ) : optimisticName ? (
-          <Check className="h-3 w-3 text-green-700 shrink-0" />
+          <Check className="h-3 w-3 text-success shrink-0" />
         ) : (
           <span
             className="h-2 w-2 rounded-full shrink-0"
@@ -295,8 +295,8 @@ function ConflictModal({
                   </div>
 
                   {isResolved ? (
-                    <div className="flex items-center gap-1.5 text-xs text-green-900">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-700" />
+                    <div className="flex items-center gap-1.5 text-xs text-success">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                       Regola sistemata
                     </div>
                   ) : (

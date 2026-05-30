@@ -2,13 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Plus,
-  Loader2,
-  AlertCircle,
-  Tags,
-} from "lucide-react";
+import { Loader2, AlertCircle, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AddButton } from "@/components/ui/add-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -52,10 +48,7 @@ export function NewCategoryButton() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="gap-2">
-        <Plus className="h-4 w-4" />
-        Nuova categoria
-      </Button>
+      <AddButton label="Nuova categoria" onClick={() => setOpen(true)} />
 
       {open && (
         <OverlayModal

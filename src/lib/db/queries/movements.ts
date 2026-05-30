@@ -1,5 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { normalizeBankDescription } from "@/lib/description-normalizer";
+import { computeMovementHash, movementSignature } from "@/lib/movement-hash";
 import {
   movements,
   categories,
@@ -44,6 +46,7 @@ export async function listMovements(filters: MovementListFilters = {}) {
       amount: movements.amount,
       type: movements.type,
       description: movements.description,
+      descriptionClean: movements.descriptionClean,
       categoryId: movements.categoryId,
       categoryName: categories.name,
       categoryColor: categories.color,
@@ -56,6 +59,7 @@ export async function listMovements(filters: MovementListFilters = {}) {
       accountColor: financialAccounts.color,
       isTransfer: movements.isTransfer,
       transferToAccountId: movements.transferToAccountId,
+      matchUnavailable: movements.matchUnavailable,
       createdAt: movements.createdAt,
       // Fattura primaria collegata (movimento → ≥0 fatture).
       // Se il movimento è collegato a più fatture (pagamento aggregato),
@@ -98,6 +102,44 @@ export async function listMovements(filters: MovementListFilters = {}) {
     .leftJoin(financialAccounts, eq(movements.accountId, financialAccounts.id))
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(movements.date), desc(movements.createdAt));
+}
+
+/**
+ * Lista snella di movimenti recenti per un conto, paginata.
+ * Usata dal DetailDrawer di /conti — mostra solo i campi che servono.
+ */
+export async function listRecentMovementsByAccount(
+  accountId: string,
+  opts: { limit: number; offset: number },
+) {
+  return db
+    .select({
+      id: movements.id,
+      date: movements.date,
+      amount: movements.amount,
+      type: movements.type,
+      description: movements.description,
+      descriptionClean: movements.descriptionClean,
+      categoryName: categories.name,
+      categoryColor: categories.color,
+    })
+    .from(movements)
+    .leftJoin(categories, eq(movements.categoryId, categories.id))
+    .where(eq(movements.accountId, accountId))
+    .orderBy(desc(movements.date), desc(movements.createdAt))
+    .limit(opts.limit)
+    .offset(opts.offset);
+}
+
+/**
+ * Conteggio totale dei movimenti su un conto (per "X di Y" nella paginazione).
+ */
+export async function countMovementsByAccount(accountId: string): Promise<number> {
+  const [row] = await db
+    .select({ c: sql<number>`COUNT(*)::int` })
+    .from(movements)
+    .where(eq(movements.accountId, accountId));
+  return row?.c ?? 0;
 }
 
 /**
@@ -259,6 +301,42 @@ export type MovementInput = {
 };
 
 export async function createMovement(input: MovementInput) {
+  const norm = normalizeBankDescription(input.description);
+
+  // Calcola occurrenceIndex contando i movimenti già esistenti con la stessa
+  // signature (counter posizionale per createMovement standalone).
+  const sig = movementSignature({
+    accountId: input.accountId ?? null,
+    date: input.date,
+    amount: input.amount,
+    type: input.type,
+    description: input.description,
+  });
+  const existing = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(movements)
+    .where(
+      and(
+        input.accountId
+          ? eq(movements.accountId, input.accountId)
+          : sql`${movements.accountId} IS NULL`,
+        eq(movements.date, input.date),
+        eq(movements.amount, input.amount),
+        eq(movements.type, input.type),
+        eq(movements.description, input.description),
+      ),
+    );
+  const occurrenceIndex = existing[0]?.count ?? 0;
+  const uniqueHash = computeMovementHash({
+    accountId: input.accountId ?? null,
+    date: input.date,
+    amount: input.amount,
+    type: input.type,
+    description: input.description,
+    occurrenceIndex,
+  });
+  void sig; // signature non serve qui, solo per documentare il contratto
+
   const [row] = await db
     .insert(movements)
     .values({
@@ -266,15 +344,45 @@ export async function createMovement(input: MovementInput) {
       amount: input.amount,
       type: input.type,
       description: input.description,
+      descriptionClean: norm.changed ? norm.clean : null,
       categoryId: input.categoryId,
       employeeId: input.employeeId,
       accountId: input.accountId ?? null,
+      uniqueHash,
     })
     .returning();
   return row;
 }
 
 export async function updateMovement(id: string, input: MovementInput) {
+  const norm = normalizeBankDescription(input.description);
+
+  // Ricalcola hash escludendo l'attuale dal conteggio
+  const existing = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(movements)
+    .where(
+      and(
+        input.accountId
+          ? eq(movements.accountId, input.accountId)
+          : sql`${movements.accountId} IS NULL`,
+        eq(movements.date, input.date),
+        eq(movements.amount, input.amount),
+        eq(movements.type, input.type),
+        eq(movements.description, input.description),
+        sql`${movements.id} <> ${id}`,
+      ),
+    );
+  const occurrenceIndex = existing[0]?.count ?? 0;
+  const uniqueHash = computeMovementHash({
+    accountId: input.accountId ?? null,
+    date: input.date,
+    amount: input.amount,
+    type: input.type,
+    description: input.description,
+    occurrenceIndex,
+  });
+
   const [row] = await db
     .update(movements)
     .set({
@@ -282,9 +390,11 @@ export async function updateMovement(id: string, input: MovementInput) {
       amount: input.amount,
       type: input.type,
       description: input.description,
+      descriptionClean: norm.changed ? norm.clean : null,
       categoryId: input.categoryId,
       employeeId: input.employeeId,
       accountId: input.accountId ?? null,
+      uniqueHash,
       updatedAt: new Date(),
     })
     .where(eq(movements.id, id))
